@@ -1,0 +1,16 @@
+{
+  "name": "statemachines",
+  "version": "1.0.0",
+  "description": "Testing effect statemachines",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.ts"
+  },
+  "author": "woweow",
+  "license": "ISC",
+  "dependencies": {
+    "@typeonce/effect-machine": "^0.15.0",
+    "effect": "4.0.0-rc.109"
+  }
+}
