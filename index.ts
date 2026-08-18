@@ -38,7 +38,7 @@ const Counter = CounterDefinition.handle({
         }
       }),
       Status: Machine.transition({
-        target: (to) => to.full.Running(),
+        target: (to) => to.full.Idle(),
         resolve: ({ state, target }) => {
           console.log(`State: ${state.count}`)
           return target.from({ count: state.count })
@@ -55,6 +55,13 @@ const Counter = CounterDefinition.handle({
           return target.from({ count: state.count + 1 })
         }
       }),
+      Status: Machine.transition({
+        target: (to) => to.full.Running(),
+        resolve: ({ state, target }) => {
+          console.log(`State: ${state.count}`)
+          return target.from({ count: state.count })
+        }
+      }),
       Stop: Machine.transition({
         target: (to) => to.full.Idle(),
         resolve: ({ state, target }) => {
@@ -66,52 +73,37 @@ const Counter = CounterDefinition.handle({
   }
 })
 
-const increment = Effect.gen(function* () {
+const program = Effect.gen(function* () {
   const ref = yield* Machine.start(Counter)
-  yield* ref.send(CounterEvent.Increment())
-})
-
-const stop = Effect.gen(function* () {
-  const ref = yield* Machine.start(Counter)
-  yield* ref.send(CounterEvent.Stop())
-})
-
-const status = Effect.gen(function* () {
-  const ref = yield* Machine.start(Counter)
-  yield* ref.send(CounterEvent.Start())
-})
-
-const start = Effect.gen(function* () {
-  const ref = yield* Machine.start(Counter)
-  yield* ref.send(CounterEvent.Start())
-  console.log('started')
-})
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-while (true) {
-  console.log('awaiting input...')
-  const input = await rl.question('> ');
-  switch (input) {
-    case 'exit':
-      break;
-    case 'inc':
-      await Effect.runPromise(increment)
-      break;
-    case 'stop':
-      await Effect.runPromise(stop)
-      break;
-    case 'start':
-      await Effect.runPromise(start)
-      break;
-    case 'status':
-      await Effect.runPromise(status)
-
-      break;
-    default:
-      console.log('invalid arg')
-      break;
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  })
+  while (true) {
+    console.log('awaiting input...')
+    const input = yield* Effect.promise(() => rl.question('> '))
+    switch (input) {
+      case 'exit':
+        rl.close()
+        return
+      case 'inc':
+        yield* ref.send(CounterEvent.Increment())
+        break
+      case 'stop':
+        yield* ref.send(CounterEvent.Stop())
+        break
+      case 'start':
+        yield* ref.send(CounterEvent.Start())
+        console.log('started')
+        break
+      case 'status':
+        yield* ref.send(CounterEvent.Status())
+        break
+      default:
+        console.log('invalid arg')
+        break
+    }
   }
-}
+})
+
+await Effect.runPromise(Effect.scoped(program))
