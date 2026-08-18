@@ -12,5 +12,9 @@
   "dependencies": {
     "@typeonce/effect-machine": "^0.15.0",
     "effect": "4.0.0-rc.109"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "5.9"
   }
 }
