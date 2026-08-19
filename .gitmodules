@@ -1,0 +1,3 @@
+[submodule "effect-machine"]
+	path = effect-machine
+	url = https://github.com/typeonce-dev/effect-machine.git
