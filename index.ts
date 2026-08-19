@@ -7,6 +7,7 @@ class Job extends Schema.TaggedClass<Job>("Job")("Job", {
 }) {}
 
 const verifyPrompt = (feature: string) => `Verify the feature: ${feature}`
+const featureFromVerify = (prompt: string) => prompt.slice("Verify the feature: ".length)
 
 const States = Machine.states({
   Job: {
@@ -35,21 +36,15 @@ const Factory = Machine.make({
   Job: {
     states: {
       Implementing: {
-        entry: ({ containingState }) => {
-          console.log(`agent: implementing "${containingState.prompt}"`)
-          return undefined
-        },
         always: Machine.transition({
           target: (to) => to.local.with(),
-          resolve: ({ containingState, target }) =>
-            target.from({ prompt: verifyPrompt(containingState.prompt) }, (job) => job.Verifying.from())
+          resolve: ({ containingState, target }) => {
+            console.log(`agent: implementing "${containingState.prompt}"`)
+            return target.from({ prompt: verifyPrompt(containingState.prompt) }, (job) => job.Verifying.from())
+          }
         })
       },
       Verifying: {
-        entry: ({ containingState }) => {
-          console.log(`agent: verifying "${containingState.prompt}"`)
-          return undefined
-        },
         always: Machine.transition({
           cases: (branch) => [
             branch({
@@ -60,31 +55,41 @@ const Factory = Machine.make({
               },
               target: (to) => to.local.with(),
               resolve: ({ containingState, target }) => {
-                const feature = containingState.prompt.slice("Verify the feature: ".length)
-                return target.from({ prompt: `Done: ${feature}` }, (job) => job.Done.from())
+                console.log(`agent: verifying "${containingState.prompt}"`)
+                const feature = featureFromVerify(containingState.prompt)
+                return target.from({ prompt: `Mark feature as done: ${feature}` }, (job) => job.Done.from())
               }
             })
           ],
           otherwise: {
             target: (to) => to.local.with(),
             resolve: ({ containingState, target }) => {
-              const feature = containingState.prompt.slice("Verify the feature: ".length)
-              return target.from({ prompt: `Needs review: ${feature}` }, (job) => job.NeedsReview.from())
+              console.log(`agent: verifying "${containingState.prompt}"`)
+              const feature = featureFromVerify(containingState.prompt)
+              return target.from({ prompt: `Mark feature as needs review: ${feature}` }, (job) => job.NeedsReview.from())
             }
           }
         })
       },
       Done: {
-        entry: ({ containingState }) => {
-          console.log(`done: "${containingState.prompt}"`)
-          return undefined
-        }
+        always: Machine.transition({
+          target: (to) => to.none(),
+          resolve: ({ containingState }) => {
+            const feature = containingState.prompt.slice("Mark feature as done: ".length)
+            console.log(`done: "Marked as done: ${feature}"`)
+            return undefined
+          }
+        })
       },
       NeedsReview: {
-        entry: ({ containingState }) => {
-          console.log(`needs review: "${containingState.prompt}"`)
-          return undefined
-        }
+        always: Machine.transition({
+          target: (to) => to.none(),
+          resolve: ({ containingState }) => {
+            const feature = containingState.prompt.slice("Mark feature as needs review: ".length)
+            console.log(`needs review: "Marked as needs review: ${feature}"`)
+            return undefined
+          }
+        })
       }
     }
   }
