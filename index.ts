@@ -33,20 +33,15 @@ const TicketMachine = Machine.make({
   Ticket: {
     states: {
       Implementing: {
-        entry: ({ containingState }) => {
-          console.log(`ticket ${containingState.id}: implementing`)
-          return undefined
-        },
         always: Machine.transition({
           target: (to) => to.local.Verifying(),
-          resolve: ({ target }) => target.from()
+          resolve: ({ containingState, target }) => {
+            console.log(`ticket ${containingState.id}: implementing`)
+            return target.from()
+          }
         })
       },
       Verifying: {
-        entry: ({ containingState }) => {
-          console.log(`ticket ${containingState.id}: verifying`)
-          return undefined
-        },
         always: Machine.transition({
           cases: (branch) => [
             branch({
@@ -54,27 +49,25 @@ const TicketMachine = Machine.make({
               when: ({ containingState }) =>
                 containingState.id % 2 === 0 ? Option.some(undefined) : Option.none(),
               target: (to) => to.local.Done(),
-              resolve: ({ target }) => target.from()
+              resolve: ({ containingState, target }) => {
+                console.log(`ticket ${containingState.id}: verifying`)
+                console.log(`ticket ${containingState.id}: done`)
+                return target.from()
+              }
             })
           ],
           otherwise: {
             target: (to) => to.local.NeedsReview(),
-            resolve: ({ target }) => target.from()
+            resolve: ({ containingState, target }) => {
+              console.log(`ticket ${containingState.id}: verifying`)
+              console.log(`ticket ${containingState.id}: needs review`)
+              return target.from()
+            }
           }
         })
       },
-      Done: {
-        entry: ({ containingState }) => {
-          console.log(`ticket ${containingState.id}: done`)
-          return undefined
-        }
-      },
-      NeedsReview: {
-        entry: ({ containingState }) => {
-          console.log(`ticket ${containingState.id}: needs review`)
-          return undefined
-        }
-      }
+      Done: {},
+      NeedsReview: {}
     }
   }
 })
