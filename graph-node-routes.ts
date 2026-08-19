@@ -88,20 +88,9 @@ export const branchGraph: RoutedGraph = {
           match: { kind: "equals", key: "decision", value: "PASS" }
         },
         {
-          to: "fix",
+          to: "implementer",
           prompt: "Fix the issues from review.",
           match: { kind: "equals", key: "decision", value: "FIX" }
-        }
-      ]
-    },
-    {
-      id: "fix",
-      systemPrompt: "You fix issues from review.",
-      routes: [
-        {
-          to: "reviewer",
-          prompt: "Passes review? Reply exactly PASS or FIX.",
-          match: { kind: "always" }
         }
       ]
     },
