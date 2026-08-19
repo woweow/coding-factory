@@ -1,8 +1,10 @@
-// @ts-nocheck — minimal wait/resume demo; types relaxed.
+// @ts-nocheck — minimal hardcoded wait/resume loop for comparison with compileGraph.
 /**
- * Minimal turnstile-shaped loop focused on the wait/resume island.
+ * Smallest readable hardcoded machine with human input:
  *
- *   Locked  --invoke-->  AwaitingInput  --Resume-->  Locked  (loops)
+ *   Locked  --invoke always-->  AwaitingInput  --Resume-->  Locked  (loops)
+ *
+ * Flat structure (no Job compound) — useful baseline before reading color-picker-hardcoded.ts.
  *
  * Run: npm run turnstile
  */
@@ -10,7 +12,7 @@ import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
 import { launchMachine, type HumanInputRequest } from "./machine-host.ts"
 
-const MESSAGE = "What is your favorite color?"
+const PROMPT = "Enter passcode:"
 
 class Ctx extends Schema.TaggedClass<Ctx>("Ctx")("Ctx", {
   note: Schema.String,
@@ -37,45 +39,41 @@ export const TurnstileHumanPattern = Machine.make({
   events: Events,
   emittedEvents: Emissions,
   input: Ctx,
-  initial: {
-    target: (to) => to.Locked(),
-    resolve: ({ input, target }) => target(new Ctx({ note: input.note }))
-  }
+  initial: (to) => to.Locked().resolve(({ input, target }) => target(new Ctx({ note: input.note })))
 }).handle({
   Locked: {
     entry: () => {
       console.log("  entering Locked")
       return undefined
     },
-    invoke: Machine.invoke({
-      id: "agent",
-      effect: ({ state }) =>
-        Effect.sync(() => {
-          console.log(`  note: ${state.note}`)
-          console.log(`  agent: ${MESSAGE}`)
-          return MESSAGE
-        }),
-      onDone: Machine.transition({
-        target: (to) => to.full.AwaitingInput(),
-        resolve: ({ output, state, target }) => target(new Ctx({ note: state.note, humanMessage: output }))
-      })
-    })
+    invoke: (from) =>
+      from
+        .effect("agent", ({ state }) =>
+          Effect.sync(() => {
+            console.log(`  note: ${state.note}`)
+            console.log(`  agent: ${PROMPT}`)
+            return PROMPT
+          })
+        )
+        .onDone((to) =>
+          to.full.AwaitingInput().resolve(({ output, state, target }) =>
+            target(new Ctx({ note: state.note, humanMessage: output }))
+          )
+        )
   },
 
   AwaitingInput: {
     entry: (state, enqueue) => {
       console.log("  entering AwaitingInput")
-      enqueue.emit(Emissions.NeedInput({ message: state.humanMessage ?? MESSAGE, returnNode: "Locked" }))
+      enqueue.emit(Emissions.NeedInput({ message: state.humanMessage ?? PROMPT, returnNode: "Locked" }))
       return undefined
     },
     on: {
-      Resume: Machine.transition({
-        target: (to) => to.full.Locked(),
-        resolve: ({ event, target }) => {
+      Resume: (to) =>
+        to.full.Locked().resolve(({ event, target }) => {
           console.log(`  resume at Locked with: ${event.text}`)
           return target(new Ctx({ note: event.text }))
-        }
-      })
+        })
     }
   }
 })

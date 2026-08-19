@@ -2,6 +2,8 @@
 /**
  * Node-owned routes. Each route.prompt is the edge prompt handed TO the next node.
  * Pause routes emit NeedInput and wait for Resume — input collection is external.
+ *
+ * For a readable hand-written equivalent, see color-picker-hardcoded.ts.
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
@@ -36,7 +38,6 @@ export type OutputMatch =
 
 export type Route = {
   to?: string
-  /** Edge prompt for the next node. Omit to pass through the current edgePrompt (e.g. user input). */
   prompt?: string
   pause?: boolean
   message?: string
@@ -54,8 +55,6 @@ export type RoutedGraph = {
   name: string
   entry: string
   nodes: RoutedNode[]
-  /** When set, agent picks HUMAN on first visit (initial edgePrompt) then non-pause routes after resume. */
-  demoDeterministic?: boolean
 }
 
 export const branchGraph: RoutedGraph = {
@@ -97,35 +96,19 @@ export const branchGraph: RoutedGraph = {
   ]
 }
 
-/** Minimal 2-step demo: pause for color, then log it. Uses the same compiled awaiting pattern as branchGraph. */
-export const colorGraph: RoutedGraph = {
-  name: "ColorGraph",
-  entry: "askColor",
-  demoDeterministic: true,
-  nodes: [
-    {
-      id: "askColor",
-      systemPrompt: "Ask the user for their favorite color.",
-      routes: [
-        {
-          pause: true,
-          message: HUMAN_MESSAGE,
-          match: { kind: "equals", key: "decision", value: "HUMAN" }
-        },
-        {
-          to: "logColor",
-          match: { kind: "equals", key: "decision", value: "CONTINUE" }
-        }
-      ]
-    },
-    {
-      id: "logColor",
-      terminal: true,
-      systemPrompt: "Log the user's favorite color.",
-      routes: []
-    }
-  ]
+type JobChild = Record<string, { from: () => unknown }>
+type Target = {
+  from: (
+    input: { edgePrompt: string; returnNode?: string; humanMessage?: string },
+    pick: (job: JobChild) => unknown
+  ) => unknown
 }
+
+const goTo = (target: Target, edgePrompt: string, next: string) =>
+  target.from({ edgePrompt }, (job) => job[next].from())
+
+const goToAwaiting = (target: Target, edgePrompt: string, returnNode: string, message: string) =>
+  target.from({ edgePrompt, returnNode, humanMessage: message }, (job) => job[AWAITING].from())
 
 const workLog = (systemPrompt: string | undefined, edgePrompt: string) => {
   console.log(`  system prompt: ${systemPrompt ?? ""} ... edge prompt: ${edgePrompt}`)
@@ -143,26 +126,18 @@ const validateGraph = (graph: RoutedGraph) => {
     for (const route of node.routes) {
       if (route.pause) continue
       if (!route.to) throw new Error(`${graph.name}: route from "${node.id}" needs to`)
-      // prompt is optional — omit to pass through the current edgePrompt (e.g. user text after Resume)
+      if (!route.prompt) throw new Error(`${graph.name}: route from "${node.id}" to "${route.to}" needs prompt`)
       if (!nodeIds.has(route.to)) throw new Error(`${graph.name}: unknown route target "${route.to}"`)
     }
   }
 }
 
-const mockOutput = (routes: Route[], edgePrompt: string, graph: RoutedGraph, launchEdgePrompt: string) => {
-  if (graph.demoDeterministic) {
-    if (edgePrompt !== launchEdgePrompt) {
-      const forward = routes.find((r) => !r.pause && r.match.kind === "equals")
-      if (forward) return forward.match.value
-    }
-    const pause = routes.find((r) => r.pause && r.match.kind === "equals")
-    if (pause) return pause.match.value
-  }
+const mockOutput = (routes: Route[]) => {
   const choices = routes.map((r) => (r.match.kind === "equals" ? r.match.value : "done"))
   return choices[Math.floor(Math.random() * choices.length)]!
 }
 
-export const compileGraph = (graph: RoutedGraph, launchEdgePrompt = "") => {
+export const compileGraph = (graph: RoutedGraph) => {
   validateGraph(graph)
   const childStates = Object.fromEntries(
     graph.nodes.map((n) => [n.id, n.terminal ? { type: "final" as const } : {}])
@@ -194,9 +169,8 @@ export const compileGraph = (graph: RoutedGraph, launchEdgePrompt = "") => {
   for (const node of graph.nodes) {
     if (node.terminal) {
       states[node.id] = {
-        entry: ({ containingState }) => {
+        entry: () => {
           console.log(`  entering ${node.id}`)
-          console.log(`  user's color: ${containingState.edgePrompt}`)
           return undefined
         }
       }
@@ -214,7 +188,7 @@ export const compileGraph = (graph: RoutedGraph, launchEdgePrompt = "") => {
           .effect(`${node.id}-agent`, ({ containingState }) =>
             Effect.gen(function* () {
               workLog(node.systemPrompt, containingState.edgePrompt)
-              const pick = mockOutput(routes, containingState.edgePrompt, graph, launchEdgePrompt)
+              const pick = mockOutput(routes)
               const pauseRoute = routes.find(
                 (r) => r.pause && r.match.kind === "equals" && r.match.value === pick
               )
@@ -250,7 +224,7 @@ export const compileGraph = (graph: RoutedGraph, launchEdgePrompt = "") => {
                 for (const route of routes.filter((r) => !r.pause)) {
                   if (route.match.kind === "equals" && output.value === route.match.value) {
                     return select[route.match.value].from(
-                      { edgePrompt: route.prompt ?? containingState.edgePrompt },
+                      { edgePrompt: route.prompt! },
                       (job) => job[route.to!].from()
                     )
                   }
@@ -282,6 +256,6 @@ export const launchGraph = (
   edgePrompt: string,
   provideInput: (request: HumanInputRequest) => Promise<string>
 ): Promise<void> =>
-  launchMachine(compileGraph(graph, edgePrompt), new Job({ edgePrompt }), provideInput, (text) =>
+  launchMachine(compileGraph(graph), new Job({ edgePrompt }), provideInput, (text) =>
     GraphEvents.Resume({ text })
   )

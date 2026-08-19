@@ -1,10 +1,10 @@
 // @ts-nocheck — PoC visualization CLI; renderer types are looser than Machine exports.
 /**
  * Compile branchGraph and print text + Mermaid views (no run).
- * Usage: npm run viz [BranchGraph|ColorGraph]
+ * Usage: npm run viz
  */
 import { Machine } from "@typeonce/effect-machine"
-import { branchGraph, colorGraph, compileGraph, type RoutedGraph } from "./graph-node-routes.ts"
+import { branchGraph, compileGraph, type RoutedGraph } from "./graph-node-routes.ts"
 import { makeMermaidRenderer as makeStockMermaidRenderer } from "./effect-machine/test/machine/visualization/mermaid.ts"
 import { makeTextRenderer } from "./effect-machine/test/machine/visualization/text.ts"
 import type {
@@ -184,14 +184,7 @@ const makeRouteAwareMermaidRenderer = <MachineValue, Snapshot>(
   }
 }
 
-const graphs: Record<string, RoutedGraph> = { BranchGraph: branchGraph, ColorGraph: colorGraph }
-const graphName = process.argv[2] ?? "BranchGraph"
-const graph = graphs[graphName]
-if (graph === undefined) {
-  console.error(`Unknown graph "${graphName}". Choose: ${Object.keys(graphs).join(", ")}`)
-  process.exit(1)
-}
-
+const graph = branchGraph
 const formatRoutes = (g: RoutedGraph): string => {
   const lines = [`Routes for ${g.name} (authoritative):`, ""]
   for (const node of g.nodes) {
