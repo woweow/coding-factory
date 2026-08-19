@@ -3,7 +3,7 @@
  */
 import * as readline from "node:readline"
 import { stdin, stdout } from "node:process"
-import type { HumanInputRequest } from "./graph-node-routes.ts"
+import type { HumanInputRequest } from "./machine-host.ts"
 
 const readPipedLines = (): Promise<string[]> =>
   new Promise((resolve) => {

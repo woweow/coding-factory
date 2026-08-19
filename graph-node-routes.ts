@@ -4,7 +4,10 @@
  * Pause routes emit NeedInput and wait for Resume — input collection is external.
  */
 import { Machine } from "@typeonce/effect-machine"
-import { Deferred, Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema } from "effect"
+import { launchMachine, type HumanInputRequest } from "./machine-host.ts"
+
+export type { HumanInputRequest }
 
 const HUMAN_MESSAGE = "What is your favorite color?"
 const AWAITING = "__awaitingInput"
@@ -26,11 +29,6 @@ class NeedInput extends Schema.TaggedClass<NeedInput>("NeedInput")("NeedInput", 
 
 const GraphEvents = Machine.events(Resume)
 const GraphEmissions = Machine.emittedEvents(NeedInput)
-
-export type HumanInputRequest = {
-  message: string
-  returnNode: string
-}
 
 export type OutputMatch =
   | { kind: "always" }
@@ -250,26 +248,6 @@ export const launchGraph = (
   edgePrompt: string,
   provideInput: (request: HumanInputRequest) => Promise<string>
 ): Promise<void> =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const prepared = yield* Machine.prepare(compileGraph(graph), new Job({ edgePrompt }))
-      const refSlot = yield* Deferred.make()
-
-      yield* prepared.emissions.pipe(
-        Stream.runForEach((need) =>
-          Effect.gen(function* () {
-            const text = yield* Effect.promise(() =>
-              provideInput({ message: need.message, returnNode: need.returnNode })
-            )
-            const ref = yield* Deferred.await(refSlot)
-            yield* ref.send(GraphEvents.Resume({ text }))
-          })
-        ),
-        Effect.forkChild({ startImmediately: true })
-      )
-
-      const ref = yield* prepared.start
-      yield* Deferred.succeed(refSlot, ref)
-      yield* ref.join
-    })
+  launchMachine(compileGraph(graph), new Job({ edgePrompt }), provideInput, (text) =>
+    GraphEvents.Resume({ text })
   )

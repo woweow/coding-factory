@@ -1,158 +1,84 @@
-// @ts-nocheck — hand-written reference machine; types intentionally relaxed.
+// @ts-nocheck — minimal wait/resume demo; types relaxed.
 /**
- * Hand-written machine showing where __awaitingInput lives.
+ * Minimal turnstile-shaped loop focused on the wait/resume island.
  *
- * Same shape as compileGraph() output in graph-node-routes.ts, but written
- * explicitly like the turnstile docs example so you can read the structure.
+ *   Locked  --invoke-->  AwaitingInput  --Resume-->  Locked  (loops)
  *
- * Flow (turnstile + human pause):
- *   locked --CoinInserted--> unlocked --GatePushed--> locked
- *   locked --invoke picks HUMAN--> __awaitingInput --Resume--> locked
- *
- * Not wired to CLI — reference only.
+ * Run: npm run turnstile
  */
 import { Machine } from "@typeonce/effect-machine"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
+import { launchMachine, type HumanInputRequest } from "./machine-host.ts"
 
-const HUMAN_MESSAGE = "What is your favorite color?"
+const MESSAGE = "What is your favorite color?"
 
-class GateJob extends Schema.TaggedClass<GateJob>("GateJob")("GateJob", {
-  edgePrompt: Schema.String,
-  returnNode: Schema.optional(Schema.String),
+class Ctx extends Schema.TaggedClass<Ctx>("Ctx")("Ctx", {
+  note: Schema.String,
   humanMessage: Schema.optional(Schema.String)
 }) {}
 
-class Resume extends Schema.TaggedClass<Resume>("Resume")("Resume", {
-  text: Schema.String
-}) {}
-
+class Resume extends Schema.TaggedClass<Resume>("Resume")("Resume", { text: Schema.String }) {}
 class NeedInput extends Schema.TaggedClass<NeedInput>("NeedInput")("NeedInput", {
   message: Schema.String,
   returnNode: Schema.String
 }) {}
 
-class CoinInserted extends Schema.TaggedClass<CoinInserted>("CoinInserted")("CoinInserted", {}) {}
-class GatePushed extends Schema.TaggedClass<GatePushed>("GatePushed")("GatePushed", {}) {}
-
-const Events = Machine.events(Resume, CoinInserted, GatePushed)
+const Events = Machine.events(Resume)
 const Emissions = Machine.emittedEvents(NeedInput)
 
 const States = Machine.states({
-  Job: {
-    schema: GateJob,
-    initial: "locked",
-    states: {
-      locked: {},
-      unlocked: {},
-      complete: { type: "final" },
-      // ▼ Compiler injects this child — not in your routedGraph JSON
-      __awaitingInput: {}
-    }
-  }
+  Locked: Ctx,
+  AwaitingInput: Ctx
 })
 
-type JobChild = Record<string, { from: () => unknown }>
-type Target = {
-  from: (input: { edgePrompt: string; returnNode?: string; humanMessage?: string }, pick: (job: JobChild) => unknown) => unknown
-}
-
-const goTo = (target: Target, edgePrompt: string, next: string) =>
-  target.from({ edgePrompt }, (job) => job[next].from())
-
-const goToAwaiting = (target: Target, edgePrompt: string, returnNode: string, message: string) =>
-  target.from({ edgePrompt, returnNode, humanMessage: message }, (job) => job.__awaitingInput.from())
-
 export const TurnstileHumanPattern = Machine.make({
-  id: "TurnstileHumanPattern",
+  id: "TurnstileWaitDemo",
   states: States.states,
   events: Events,
   emittedEvents: Emissions,
-  input: GateJob,
+  input: Ctx,
   initial: {
-    target: (to) => to.Job.initial(),
-    resolve: ({ input, target }) => goTo(target as Target, input.edgePrompt, "locked")
+    target: (to) => to.Locked(),
+    resolve: ({ input, target }) => target(new Ctx({ note: input.note }))
   }
 }).handle({
-  Job: {
-    states: {
-      locked: {
-        entry: () => {
-          console.log("  entering locked")
-          return undefined
-        },
-        invoke: Machine.invoke({
-          id: "locked-agent",
-          effect: ({ containingState }) =>
-            Effect.sync(() => {
-              console.log(`  edge prompt: ${containingState.edgePrompt}`)
-              return Math.random() < 0.5
-                ? ({ tag: "route" as const, value: "CONTINUE" as const })
-                : ({ tag: "human" as const, message: HUMAN_MESSAGE })
-            }),
-          onDone: Machine.transition({
-            cases: (branch) => [
-              // Pause route: no destination — compiler sends you to __awaitingInput
-              branch({
-                title: "human",
-                when: ({ output }) => (output.tag === "human" ? Option.some("__awaitingInput") : Option.none()),
-                target: (to) => to.local.with(),
-                resolve: ({ output, containingState, target }) =>
-                  goToAwaiting(target as Target, containingState.edgePrompt, "locked", output.message)
-              }),
-              branch({
-                title: "CONTINUE",
-                when: ({ output }) =>
-                  output.tag === "route" && output.value === "CONTINUE" ? Option.some("unlocked") : Option.none(),
-                target: (to) => to.local.with(),
-                resolve: ({ target }) => goTo(target as Target, "Gate is unlocked.", "unlocked")
-              })
-            ],
-            otherwise: { target: (to) => to.none(), resolve: () => undefined }
-          })
+  Locked: {
+    entry: () => {
+      console.log("  entering Locked")
+      return undefined
+    },
+    invoke: Machine.invoke({
+      id: "agent",
+      effect: ({ state }) =>
+        Effect.sync(() => {
+          console.log(`  note: ${state.note}`)
+          console.log(`  agent: ${MESSAGE}`)
+          return MESSAGE
         }),
-        on: {
-          // Docs turnstile: explicit coin event (same as CoinInserted in turnstile/machine.ts)
-          CoinInserted: Machine.transition({
-            target: (to) => to.local.with(),
-            resolve: ({ target }) => goTo(target as Target, "Gate is unlocked.", "unlocked")
-          })
-        }
-      },
+      onDone: Machine.transition({
+        target: (to) => to.full.AwaitingInput(),
+        resolve: ({ output, state, target }) => target(new Ctx({ note: state.note, humanMessage: output }))
+      })
+    })
+  },
 
-      unlocked: {
-        on: {
-          GatePushed: Machine.transition({
-            target: (to) => to.local.with(),
-            resolve: ({ target }) => goTo(target as Target, "Gate re-locked.", "locked")
-          })
+  AwaitingInput: {
+    entry: (state, enqueue) => {
+      console.log("  entering AwaitingInput")
+      enqueue.emit(Emissions.NeedInput({ message: state.humanMessage ?? MESSAGE, returnNode: "Locked" }))
+      return undefined
+    },
+    on: {
+      Resume: Machine.transition({
+        target: (to) => to.full.Locked(),
+        resolve: ({ event, target }) => {
+          console.log(`  resume at Locked with: ${event.text}`)
+          return target(new Ctx({ note: event.text }))
         }
-      },
-
-      complete: {},
-
-      // ─── __awaitingInput: human-in-the-loop island ───────────────────────
-      // Entered when invoke onDone picks the pause/human branch above.
-      // No agent invoke here — emit NeedInput, then wait for Resume event.
-      __awaitingInput: {
-        entry: (state, enqueue) => {
-          console.log("  entering __awaitingInput")
-          const message = state.humanMessage ?? HUMAN_MESSAGE
-          enqueue.emit(Emissions.NeedInput({ message, returnNode: state.returnNode ?? "locked" }))
-          return undefined
-        },
-        on: {
-          // UI collected text → host sends Resume → return to returnNode
-          Resume: Machine.transition({
-            target: (to) => to.local.with(),
-            resolve: ({ event, state, containingState, target }) => {
-              const ctx = state ?? containingState
-              const returnNode = ctx.returnNode ?? "locked"
-              console.log(`  resume at ${returnNode} with: ${event.text}`)
-              return goTo(target as Target, event.text, returnNode)
-            }
-          })
-        }
-      }
+      })
     }
   }
 })
+
+export const launchTurnstile = (note: string, provideInput: (req: HumanInputRequest) => Promise<string>) =>
+  launchMachine(TurnstileHumanPattern, new Ctx({ note }), provideInput, (text) => Events.Resume({ text }))
