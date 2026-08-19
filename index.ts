@@ -6,6 +6,8 @@ class Job extends Schema.TaggedClass<Job>("Job")("Job", {
   prompt: Schema.String
 }) {}
 
+const verifyPrompt = (feature: string) => `Verify the feature: ${feature}`
+
 const States = Machine.states({
   Job: {
     schema: Job,
@@ -33,33 +35,42 @@ const Factory = Machine.make({
   Job: {
     states: {
       Implementing: {
+        entry: ({ containingState }) => {
+          console.log(`agent: implementing "${containingState.prompt}"`)
+          return undefined
+        },
         always: Machine.transition({
           target: (to) => to.local.with(),
-          resolve: ({ containingState, target }) => {
-            console.log(`agent: implementing "${containingState.prompt}"`)
-            return target.from({ prompt: "Implement the feature" }, (job) => job.Verifying.from())
-          }
+          resolve: ({ containingState, target }) =>
+            target.from({ prompt: verifyPrompt(containingState.prompt) }, (job) => job.Verifying.from())
         })
       },
       Verifying: {
+        entry: ({ containingState }) => {
+          console.log(`agent: verifying "${containingState.prompt}"`)
+          return undefined
+        },
         always: Machine.transition({
           cases: (branch) => [
             branch({
               title: "even",
               when: () => {
                 const roll = Math.floor(Math.random() * 100)
-                console.log(`agent: verifying (roll ${roll})`)
                 return roll % 2 === 0 ? Option.some(roll) : Option.none()
               },
               target: (to) => to.local.with(),
-              resolve: ({ target }) =>
-                target.from({ prompt: "Verify the feature" }, (job) => job.Done.from())
+              resolve: ({ containingState, target }) => {
+                const feature = containingState.prompt.slice("Verify the feature: ".length)
+                return target.from({ prompt: `Done: ${feature}` }, (job) => job.Done.from())
+              }
             })
           ],
           otherwise: {
             target: (to) => to.local.with(),
-            resolve: ({ target }) =>
-              target.from({ prompt: "Verify the feature" }, (job) => job.NeedsReview.from())
+            resolve: ({ containingState, target }) => {
+              const feature = containingState.prompt.slice("Verify the feature: ".length)
+              return target.from({ prompt: `Needs review: ${feature}` }, (job) => job.NeedsReview.from())
+            }
           }
         })
       },
