@@ -1,153 +1,119 @@
-// @ts-nocheck — readable hand-written machine; mirrors what compileGraph emits for a pause route.
+// @ts-nocheck — idiomatic effect-machine: emissions + public events (no stdin).
 /**
- * Hardcoded color picker — compare side-by-side with graph-node-routes.ts compileGraph().
+ * Two-node color workflow (hardcoded, library-native):
  *
- * User-visible graph (what you'd draw on a whiteboard):
+ *   colorPicker  --50% auto-->  colorLogger  (logs cyan)
+ *   colorPicker  --50% wait-->  (rests in colorPicker, emits NeedColor)
+ *                 --ColorPicked-->  colorLogger  (logs red, from host)
  *
- *   askColor  --pause/HUMAN-->  (wait for input)  --Resume-->  askColor
- *   askColor  --CONTINUE-->     logColor [terminal]
- *
- * Compiled shape (what effect-machine actually runs):
- *
- *   Job [compound]
- *   ├─ askColor        invoke agent → human branch → __awaitingInput
- *   │                  invoke agent → continue branch → logColor
- *   ├─ logColor        [final]
- *   └─ __awaitingInput entry emits NeedInput; Resume → returnNode with user text
+ * Patterns from effect-machine docs (agent-guide.md):
+ *   - Machine.emittedEvents + enqueue.emit  → outward notification
+ *   - Machine.prepare + emissions stream    → observe before start
+ *   - ref.send(publicEvent)                 → resume waiting state
  *
  * Run: npm run color-demo
  */
 import { Machine } from "@typeonce/effect-machine"
-import { Effect, Schema } from "effect"
-import { launchMachine, type HumanInputRequest } from "./machine-host.ts"
+import { Deferred, Effect, Schema, Stream } from "effect"
 
-const HUMAN_MESSAGE = "What is your favorite color?"
-const AWAITING = "__awaitingInput"
-const LAUNCH_EDGE_PROMPT = "begin"
+const DEFAULT_COLOR = "cyan"
+const HOST_COLOR = "red"
+const NEED_COLOR_MESSAGE = "Hey, I need a color"
 
-/** Shared workflow context — same fields compileGraph puts on Job schema. */
-class Job extends Schema.TaggedClass<Job>("Job")("Job", {
-  edgePrompt: Schema.String,
-  returnNode: Schema.optional(Schema.String),
-  humanMessage: Schema.optional(Schema.String)
+class ColorLogger extends Schema.TaggedClass<ColorLogger>("ColorLogger")("ColorLogger", {
+  color: Schema.String
 }) {}
 
-class Resume extends Schema.TaggedClass<Resume>("Resume")("Resume", { text: Schema.String }) {}
-class NeedInput extends Schema.TaggedClass<NeedInput>("NeedInput")("NeedInput", {
-  message: Schema.String,
-  returnNode: Schema.String
+class ColorPicked extends Schema.TaggedClass<ColorPicked>("ColorPicked")("ColorPicked", {
+  color: Schema.String
 }) {}
 
-const Events = Machine.events(Resume)
-const Emissions = Machine.emittedEvents(NeedInput)
+class NeedColor extends Schema.TaggedClass<NeedColor>("NeedColor")("NeedColor", {
+  message: Schema.String
+}) {}
+
+const Events = Machine.events(ColorPicked)
+const Emissions = Machine.emittedEvents(NeedColor)
 
 const States = Machine.states({
-  Job: {
-    schema: Job,
-    initial: "askColor",
-    states: {
-      askColor: {},
-      logColor: { type: "final" as const },
-      [AWAITING]: {}
-    }
-  }
+  colorPicker: {},
+  colorLogger: { schema: ColorLogger, type: "final" }
 })
 
-/** Mock agent: first visit pauses; after Resume, forwards to logColor with user's color as edgePrompt. */
-const askColorAgent = (edgePrompt: string) =>
-  Effect.sync(() => {
-    console.log(`  system prompt: Ask the user for their favorite color. ... edge prompt: ${edgePrompt}`)
-    if (edgePrompt === LAUNCH_EDGE_PROMPT) {
-      console.log(`  agent response: ${HUMAN_MESSAGE}`)
-      return { tag: "human" as const, message: HUMAN_MESSAGE }
-    }
-    return { tag: "route" as const, value: "CONTINUE" as const }
-  })
+const pickRoute = Effect.sync(() => {
+  if (Math.random() < 0.5) {
+    return { tag: "auto" as const, color: DEFAULT_COLOR }
+  }
+  return { tag: "needColor" as const }
+})
 
-export const ColorPickerHardcoded = Machine.make({
-  id: "ColorPickerHardcoded",
+export const ColorPickerMachine = Machine.make({
+  id: "ColorPicker",
   states: States.states,
   events: Events,
   emittedEvents: Emissions,
-  input: Job,
-  initial: (to) =>
-    to.Job.initial.resolve(({ input, target }) =>
-      target.from({ edgePrompt: input.edgePrompt }, (job) => job.askColor.from())
-    )
+  initial: (to) => to.colorPicker().resolve(({ target }) => target.from())
 }).handle({
-  Job: {
-    states: {
-      // ── askColor: agent node with pause + continue routes ─────────────────
-      askColor: {
-        entry: () => {
-          console.log("  entering askColor")
-          return undefined
-        },
-        invoke: (from) =>
-          from.effect("askColor-agent", ({ containingState }) => askColorAgent(containingState.edgePrompt)).onDone(
-            (to) =>
-              to.branches({
-                human: { title: "human", target: to.local.with },
-                CONTINUE: { title: "CONTINUE", target: to.local.with },
-                none: { target: to.none }
-              }).resolve(({ output, select, containingState }) => {
-                // pause route → __awaitingInput (compileGraph: goToAwaiting + returnNode = node.id)
-                if (output.tag === "human") {
-                  return select.human.from(
-                    {
-                      edgePrompt: containingState.edgePrompt,
-                      returnNode: "askColor",
-                      humanMessage: output.message
-                    },
-                    (job) => job[AWAITING].from()
-                  )
-                }
-                // continue route → logColor, pass through edgePrompt (user's color)
-                if (output.tag === "route" && output.value === "CONTINUE") {
-                  return select.CONTINUE.from({ edgePrompt: containingState.edgePrompt }, (job) =>
-                    job.logColor.from()
-                  )
-                }
-                return select.none()
-              })
-          )
-      },
+  colorPicker: {
+    entry: () => {
+      console.log("  [state] entering colorPicker")
+      return undefined
+    },
+    invoke: (from) =>
+      from.effect("pick-color", () => pickRoute).onDone((to) =>
+        to.branches({
+          auto: { title: "auto", target: to.full.colorLogger() },
+          wait: { title: "needColor", target: to.none }
+        }).resolve(({ output, select, target }, enqueue) => {
+          if (output.tag === "auto") {
+            console.log(`  [colorPicker] auto route → ${output.color}`)
+            return select.auto(new ColorLogger({ color: output.color }))
+          }
+          console.log(`  [colorPicker] needColor route → resting, emitting`)
+          enqueue.emit(Emissions.NeedColor({ message: NEED_COLOR_MESSAGE }))
+          return select.wait()
+        })
+      ),
+    on: {
+      ColorPicked: (to) =>
+        to.full.colorLogger().resolve(({ event, target }) => {
+          console.log(`  [colorPicker] ColorPicked event → ${event.color}`)
+          return target(new ColorLogger({ color: event.color }))
+        })
+    }
+  },
 
-      // ── logColor: terminal ────────────────────────────────────────────────
-      logColor: {
-        entry: ({ containingState }) => {
-          console.log("  entering logColor")
-          console.log(`  user's color: ${containingState.edgePrompt}`)
-          return undefined
-        }
-      },
-
-      // ── __awaitingInput: compiler-injected wait island (not in user graph) ─
-      [AWAITING]: {
-        entry: (state, enqueue) => {
-          console.log(`  entering ${AWAITING}`)
-          const message = state.humanMessage ?? HUMAN_MESSAGE
-          enqueue.emit(Emissions.NeedInput({ message, returnNode: state.returnNode ?? "askColor" }))
-          return undefined
-        },
-        on: {
-          Resume: (to) =>
-            to.local.with.resolve(({ event, state, containingState, target }) => {
-              const ctx = state ?? containingState
-              const returnNode = ctx.returnNode ?? "askColor"
-              console.log(`  resume at ${returnNode} with: ${event.text}`)
-              return target.from({ edgePrompt: event.text }, (job) => job[returnNode].from())
-            })
-        }
-      }
+  colorLogger: {
+    entry: ({ state }) => {
+      console.log(`  [colorLogger] logging color: ${state.color}`)
+      return undefined
     }
   }
 })
 
-export const launchColorPicker = (provideInput: (request: HumanInputRequest) => Promise<string>) =>
-  launchMachine(
-    ColorPickerHardcoded,
-    new Job({ edgePrompt: LAUNCH_EDGE_PROMPT }),
-    provideInput,
-    (text) => Events.Resume({ text })
+/** Host: subscribe to emissions, then send ColorPicked — per Machine.prepare docs. */
+export const runColorPicker = (): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      console.log("--- color picker run ---")
+      const prepared = yield* Machine.prepare(ColorPickerMachine)
+      const refSlot = yield* Deferred.make()
+
+      yield* prepared.emissions.pipe(
+        Stream.runForEach((emission) =>
+          Effect.gen(function* () {
+            console.log(`  [host] emission received: ${emission.message}`)
+            console.log(`  [host] sending ColorPicked(${HOST_COLOR})`)
+            const ref = yield* Deferred.await(refSlot)
+            yield* ref.send(Events.ColorPicked({ color: HOST_COLOR }))
+          })
+        ),
+        Effect.forkChild({ startImmediately: true })
+      )
+
+      const ref = yield* prepared.start
+      yield* Deferred.succeed(refSlot, ref)
+      yield* ref.join
+      console.log("--- done ---\n")
+    })
   )

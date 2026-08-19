@@ -1,4 +1,3 @@
-import { promptTerminal } from "./cli.ts"
-import { launchColorPicker } from "./color-picker-hardcoded.ts"
+import { runColorPicker } from "./color-picker-hardcoded.ts"
 
-await launchColorPicker(promptTerminal)
+await runColorPicker()
