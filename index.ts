@@ -2,63 +2,74 @@ import { Machine } from "@typeonce/effect-machine"
 import * as readline from "node:readline/promises"
 import { Effect, Option, Schema } from "effect"
 
-const Ticket = Schema.Struct({ id: Schema.Number })
+class Ticket extends Schema.TaggedClass<Ticket>("Ticket")("Ticket", {
+  id: Schema.Number
+}) {}
 
-const State = Schema.TaggedUnion({
-  Implementing: { id: Schema.Number },
-  Verifying: { id: Schema.Number },
-  Done: { id: Schema.Number },
-  NeedsReview: { id: Schema.Number }
+const States = Machine.states({
+  Ticket: {
+    schema: Ticket,
+    initial: "Implementing",
+    states: {
+      Implementing: {},
+      Verifying: {},
+      Done: {},
+      NeedsReview: {}
+    }
+  }
 })
 
-const States = Machine.states(State.cases)
-
 const TicketMachine = Machine.make({
-  id: "Ticket",
+  id: "TicketMachine",
   states: States.states,
   events: Machine.events(),
   input: Ticket,
   initial: {
-    target: (to) => to.Implementing(),
+    target: (to) => to.Ticket.initial(),
     resolve: ({ input, target }) => {
       console.log(`ticket ${input.id}: implementing`)
-      return target.from({ id: input.id })
+      return target.from({ id: input.id }, (ticket) => ticket.Implementing.from())
     }
   }
 }).handle({
-  Implementing: {
-    always: Machine.transition({
-      target: (to) => to.full.Verifying(),
-      resolve: ({ state, target }) => {
-        console.log(`ticket ${state.id}: verifying`)
-        return target.from({ id: state.id })
-      }
-    })
-  },
-  Verifying: {
-    always: Machine.transition({
-      cases: (branch) => [
-        branch({
-          title: "even",
-          when: ({ state }) => state.id % 2 === 0 ? Option.some(undefined) : Option.none(),
-          target: (to) => to.full.Done(),
-          resolve: ({ state, target }) => {
-            console.log(`ticket ${state.id}: done`)
-            return target.from({ id: state.id })
+  Ticket: {
+    states: {
+      Implementing: {
+        always: Machine.transition({
+          target: (to) => to.local.Verifying(),
+          resolve: ({ containingState, target }) => {
+            console.log(`ticket ${containingState.id}: verifying`)
+            return target.from()
           }
         })
-      ],
-      otherwise: {
-        target: (to) => to.full.NeedsReview(),
-        resolve: ({ state, target }) => {
-          console.log(`ticket ${state.id}: needs review`)
-          return target.from({ id: state.id })
-        }
-      }
-    })
-  },
-  Done: {},
-  NeedsReview: {}
+      },
+      Verifying: {
+        always: Machine.transition({
+          cases: (branch) => [
+            branch({
+              title: "even",
+              when: ({ containingState }) =>
+                containingState.id % 2 === 0 ? Option.some(undefined) : Option.none(),
+              target: (to) => to.local.Done(),
+              resolve: ({ containingState, target }) => {
+                console.log(`ticket ${containingState.id}: done`)
+                return target.from()
+              }
+            })
+          ],
+          otherwise: {
+            target: (to) => to.local.NeedsReview(),
+            resolve: ({ containingState, target }) => {
+              console.log(`ticket ${containingState.id}: needs review`)
+              return target.from()
+            }
+          }
+        })
+      },
+      Done: {},
+      NeedsReview: {}
+    }
+  }
 })
 
 const program = Effect.gen(function*() {
@@ -72,7 +83,7 @@ const program = Effect.gen(function*() {
       rl.close()
       return
     }
-    yield* Machine.start(TicketMachine, { id: Number(input) })
+    yield* Machine.start(TicketMachine, new Ticket({ id: Number(input) }))
   }
 })
 
