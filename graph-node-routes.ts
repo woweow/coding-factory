@@ -1,54 +1,10 @@
 // @ts-nocheck — runtime graph compiler; types intentionally relaxed for PoC speed.
 /**
  * Node-owned routes. Each route.prompt is the edge prompt handed TO the next node.
- * Pause routes (pause: true) emit agent message and wait for human input via CLI.
+ * Pause routes emit NeedInput and wait for Resume — input collection is external.
  */
 import { Machine } from "@typeonce/effect-machine"
-import { Deferred, Effect, Fiber, Option, Schema, Stream } from "effect"
-import * as readline from "node:readline"
-import { stdin, stdout } from "node:process"
-const readPipedLines = (): Promise<string[]> =>
-  new Promise((resolve) => {
-    if (stdin.isTTY) {
-      resolve([])
-      return
-    }
-    const lines: string[] = []
-    let buffer = ""
-    const onData = (chunk: Buffer | string) => {
-      buffer += chunk.toString()
-      let newline = buffer.indexOf("\n")
-      while (newline >= 0) {
-        lines.push(buffer.slice(0, newline).trim())
-        buffer = buffer.slice(newline + 1)
-        newline = buffer.indexOf("\n")
-      }
-    }
-    const onEnd = () => {
-      stdin.off("data", onData)
-      if (buffer.trim()) lines.push(buffer.trim())
-      resolve(lines)
-    }
-    stdin.on("data", onData)
-    stdin.on("end", onEnd)
-    stdin.resume()
-  })
-
-const askLine = (prompt: string, pipedLines: string[]): Promise<string> => {
-  stdout.write(prompt)
-  if (!stdin.isTTY) {
-    const line = pipedLines.shift()
-    if (line === undefined) return Promise.reject(new Error("stdin closed before input"))
-    return Promise.resolve(line)
-  }
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: stdin, output: stdout })
-    rl.question("", (answer) => {
-      rl.close()
-      resolve(answer)
-    })
-  })
-}
+import { Deferred, Effect, Option, Schema, Stream } from "effect"
 
 const HUMAN_MESSAGE = "What is your favorite color?"
 const AWAITING = "__awaitingInput"
@@ -70,6 +26,11 @@ class NeedInput extends Schema.TaggedClass<NeedInput>("NeedInput")("NeedInput", 
 
 const GraphEvents = Machine.events(Resume)
 const GraphEmissions = Machine.emittedEvents(NeedInput)
+
+export type HumanInputRequest = {
+  message: string
+  returnNode: string
+}
 
 export type OutputMatch =
   | { kind: "always" }
@@ -280,36 +241,35 @@ const compileGraph = (graph: RoutedGraph) => {
   }).handle({ Job: { states } })
 }
 
-export const runGraph = Effect.gen(function* () {
-  const pipedLines = yield* Effect.promise(readPipedLines)
-  const machine = compileGraph(branchGraph)
-  const input = new Job({ edgePrompt: "Implement this feature request." })
-  const prepared = yield* Machine.prepare(machine, input)
-  const refDeferred = yield* Deferred.make()
+/**
+ * Run a graph. When the machine pauses, `provideInput` is called (outside Effect).
+ * Return text to resume; the host sends Resume internally.
+ */
+export const launchGraph = (
+  graph: RoutedGraph,
+  edgePrompt: string,
+  provideInput: (request: HumanInputRequest) => Promise<string>
+): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const prepared = yield* Machine.prepare(compileGraph(graph), new Job({ edgePrompt }))
+      const refSlot = yield* Deferred.make()
 
-  const cli = yield* prepared.emissions.pipe(
-    Stream.runForEach((emission) =>
-      Effect.gen(function* () {
-        console.log(`\n  awaiting input: ${emission.message}`)
-        const text = yield* Effect.promise(() => askLine("  you: ", pipedLines)).pipe(
-          Effect.catchAll(() =>
-            Effect.gen(function* () {
-              console.log("  (no input — exiting)")
-              const ref = yield* Deferred.await(refDeferred)
-              yield* ref.stop
-              return ""
-            })
-          )
-        )
-        if (!text) return
-        const ref = yield* Deferred.await(refDeferred)
-        yield* ref.send(GraphEvents.Resume({ text }))
-      })
-    )
-  ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* prepared.emissions.pipe(
+        Stream.runForEach((need) =>
+          Effect.gen(function* () {
+            const text = yield* Effect.promise(() =>
+              provideInput({ message: need.message, returnNode: need.returnNode })
+            )
+            const ref = yield* Deferred.await(refSlot)
+            yield* ref.send(GraphEvents.Resume({ text }))
+          })
+        ),
+        Effect.forkChild({ startImmediately: true })
+      )
 
-  const ref = yield* prepared.start
-  yield* Deferred.succeed(refDeferred, ref)
-  yield* ref.join
-  yield* Fiber.interrupt(cli)
-})
+      const ref = yield* prepared.start
+      yield* Deferred.succeed(refSlot, ref)
+      yield* ref.join
+    })
+  )
