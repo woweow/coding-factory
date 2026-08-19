@@ -132,7 +132,7 @@ const mockOutput = (routes: Route[]) => {
   return choices[Math.floor(Math.random() * choices.length)]!
 }
 
-const compileGraph = (graph: RoutedGraph) => {
+export const compileGraph = (graph: RoutedGraph) => {
   validateGraph(graph)
   const childStates = Object.fromEntries(
     graph.nodes.map((n) => [n.id, n.terminal ? { type: "final" as const } : {}])
