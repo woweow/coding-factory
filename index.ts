@@ -16,8 +16,8 @@ const States = Machine.states({
     states: {
       Implementing: {},
       Verifying: {},
-      Done: {},
-      NeedsReview: {}
+      Done: { type: "final" },
+      NeedsReview: { type: "final" }
     }
   }
 })
@@ -36,60 +36,66 @@ const Factory = Machine.make({
   Job: {
     states: {
       Implementing: {
-        always: Machine.transition({
-          target: (to) => to.local.with(),
-          resolve: ({ containingState, target }) => {
-            console.log(`agent: implementing "${containingState.prompt}"`)
-            return target.from({ prompt: verifyPrompt(containingState.prompt) }, (job) => job.Verifying.from())
-          }
+        invoke: Machine.invoke({
+          id: "implement-agent",
+          effect: ({ containingState }) =>
+            Effect.sync(() => {
+              console.log(`agent: implementing "${containingState.prompt}"`)
+              return verifyPrompt(containingState.prompt)
+            }),
+          onDone: Machine.transition({
+            target: (to) => to.local.with(),
+            resolve: ({ output, target }) =>
+              target.from({ prompt: output }, (job) => job.Verifying.from())
+          })
         })
       },
       Verifying: {
-        always: Machine.transition({
-          cases: (branch) => [
-            branch({
-              title: "even",
-              when: () => {
-                const roll = Math.floor(Math.random() * 100)
-                return roll % 2 === 0 ? Option.some(roll) : Option.none()
-              },
-              target: (to) => to.local.with(),
-              resolve: ({ containingState, target }) => {
-                console.log(`agent: verifying "${containingState.prompt}"`)
-                const feature = featureFromVerify(containingState.prompt)
-                return target.from({ prompt: `Mark feature as done: ${feature}` }, (job) => job.Done.from())
-              }
-            })
-          ],
-          otherwise: {
-            target: (to) => to.local.with(),
-            resolve: ({ containingState, target }) => {
+        invoke: Machine.invoke({
+          id: "verify-agent",
+          effect: ({ containingState }) =>
+            Effect.sync(() => {
               console.log(`agent: verifying "${containingState.prompt}"`)
-              const feature = featureFromVerify(containingState.prompt)
-              return target.from({ prompt: `Mark feature as needs review: ${feature}` }, (job) => job.NeedsReview.from())
+              const roll = Math.floor(Math.random() * 100)
+              return {
+                approved: roll % 2 === 0,
+                feature: featureFromVerify(containingState.prompt)
+              }
+            }),
+          onDone: Machine.transition({
+            cases: (branch) => [
+              branch({
+                title: "approved",
+                when: ({ output }) => output.approved ? Option.some(output.feature) : Option.none(),
+                target: (to) => to.local.with(),
+                resolve: ({ match, target }) =>
+                  target.from({ prompt: `Mark feature as done: ${match}` }, (job) => job.Done.from())
+              })
+            ],
+            otherwise: {
+              target: (to) => to.local.with(),
+              resolve: ({ output, target }) =>
+                target.from(
+                  { prompt: `Mark feature as needs review: ${output.feature}` },
+                  (job) => job.NeedsReview.from()
+                )
             }
-          }
+          })
         })
       },
       Done: {
-        always: Machine.transition({
-          target: (to) => to.none(),
-          resolve: ({ containingState }) => {
-            const feature = containingState.prompt.slice("Mark feature as done: ".length)
-            console.log(`done: "Marked as done: ${feature}"`)
-            return undefined
-          }
-        })
+        entry: ({ containingState }) => {
+          const feature = containingState.prompt.slice("Mark feature as done: ".length)
+          console.log(`done: "Marked as done: ${feature}"`)
+          return undefined
+        }
       },
       NeedsReview: {
-        always: Machine.transition({
-          target: (to) => to.none(),
-          resolve: ({ containingState }) => {
-            const feature = containingState.prompt.slice("Mark feature as needs review: ".length)
-            console.log(`needs review: "Marked as needs review: ${feature}"`)
-            return undefined
-          }
-        })
+        entry: ({ containingState }) => {
+          const feature = containingState.prompt.slice("Mark feature as needs review: ".length)
+          console.log(`needs review: "Marked as needs review: ${feature}"`)
+          return undefined
+        }
       }
     }
   }
@@ -103,7 +109,8 @@ const program = Effect.gen(function*() {
       rl.close()
       return
     }
-    yield* Machine.start(Factory, new Job({ prompt }))
+    const ref = yield* Machine.start(Factory, new Job({ prompt }))
+    yield* ref.join
   }
 })
 
