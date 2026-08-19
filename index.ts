@@ -51,7 +51,6 @@ const TicketMachine = Machine.make({
               target: (to) => to.local.Done(),
               resolve: ({ containingState, target }) => {
                 console.log(`ticket ${containingState.id}: verifying`)
-                console.log(`ticket ${containingState.id}: done`)
                 return target.from()
               }
             })
@@ -60,14 +59,23 @@ const TicketMachine = Machine.make({
             target: (to) => to.local.NeedsReview(),
             resolve: ({ containingState, target }) => {
               console.log(`ticket ${containingState.id}: verifying`)
-              console.log(`ticket ${containingState.id}: needs review`)
               return target.from()
             }
           }
         })
       },
-      Done: {},
-      NeedsReview: {}
+      Done: {
+        entry: ({ containingState }) => {
+          console.log(`ticket ${containingState.id}: done`)
+          return undefined
+        }
+      },
+      NeedsReview: {
+        entry: ({ containingState }) => {
+          console.log(`ticket ${containingState.id}: needs review`)
+          return undefined
+        }
+      }
     }
   }
 })
