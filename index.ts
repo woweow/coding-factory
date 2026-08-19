@@ -1,6 +1,6 @@
 import { Machine } from "@typeonce/effect-machine"
 import * as readline from "node:readline/promises"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 
 const Ticket = Schema.Struct({ id: Schema.Number })
 
@@ -37,17 +37,23 @@ const TicketMachine = Machine.make({
   },
   Verifying: {
     always: Machine.transition({
-      branches: (to) => ({
-        even: { target: to.full.Done() },
-        odd: { target: to.full.NeedsReview() }
-      }),
-      resolve: ({ state, select }) => {
-        if (state.id % 2 === 0) {
-          console.log(`ticket ${state.id}: done`)
-          return select.even.from({ id: state.id })
+      cases: (branch) => [
+        branch({
+          title: "even",
+          when: ({ state }) => state.id % 2 === 0 ? Option.some(undefined) : Option.none(),
+          target: (to) => to.full.Done(),
+          resolve: ({ state, target }) => {
+            console.log(`ticket ${state.id}: done`)
+            return target.from({ id: state.id })
+          }
+        })
+      ],
+      otherwise: {
+        target: (to) => to.full.NeedsReview(),
+        resolve: ({ state, target }) => {
+          console.log(`ticket ${state.id}: needs review`)
+          return target.from({ id: state.id })
         }
-        console.log(`ticket ${state.id}: needs review`)
-        return select.odd.from({ id: state.id })
       }
     })
   },
