@@ -4,7 +4,7 @@
  *
  *   Locked  --invoke always-->  AwaitingInput  --Resume-->  Locked  (loops)
  *
- * Flat structure (no Job compound) — useful baseline before reading color-picker-hardcoded.ts.
+ * Flat structure (no Job compound) — see external-callback-example.ts for emit + event resume.
  *
  * Run: npm run turnstile
  */

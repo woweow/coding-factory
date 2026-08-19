@@ -22,32 +22,20 @@ const inspection = {
   enabled: Machine.enabled
 }
 
-const AWAITING = "__awaitingInput"
-
-/** Map `${sourcePath}:${branchKeyOrTitle}` → resolved leaf path from graph route metadata. */
+/** Map `${sourcePath}:${branchKey}` → resolved leaf path from graph route metadata. */
 const routeHintsFromGraph = (graph: RoutedGraph): ReadonlyMap<string, string> => {
   const root = "Job"
   const hints = new Map<string, string>()
 
   for (const node of graph.nodes) {
+    if (node.terminal) continue
     const source = `${root}.${node.id}`
-    if (!node.terminal) {
-      hints.set(`${source}:human`, `${root}.${AWAITING}`)
-    }
     for (const route of node.routes) {
-      if (route.pause) {
-        if (route.match.kind === "equals") {
-          hints.set(`${source}:${route.match.value}`, `${root}.${AWAITING}`)
-        }
-        continue
-      }
-      if (route.to === undefined) continue
       const key = route.match.kind === "equals" ? route.match.value : route.to
       hints.set(`${source}:${key}`, `${root}.${route.to}`)
     }
   }
 
-  hints.set(`${root}.${AWAITING}:Resume`, `${root}.${graph.entry}`)
   return hints
 }
 
@@ -67,10 +55,6 @@ const isLeafPath = (path: string, nodes: ReadonlyArray<StateNode>): boolean => {
   return node?.type === "atomic" || node?.type === "final" || node?.type === "history"
 }
 
-/**
- * Static inspection reports compound `local.with` targets (e.g. Job) while resolvers
- * navigate to leaf siblings. Resolve diagram edges using branch keys + graph hints.
- */
 const resolveDiagramTarget = (
   source: string,
   branch: BranchLike,
@@ -84,13 +68,6 @@ const resolveDiagramTarget = (
     const hinted = routeHints.get(`${source}:${identity}`)
     if (hinted !== undefined && nodes.some((node) => node.path === hinted)) {
       return hinted
-    }
-  }
-
-  if (source.endsWith(`.${AWAITING}`) && branch.type === "direct") {
-    const resumeHint = routeHints.get(`${source}:Resume`)
-    if (resumeHint !== undefined && nodes.some((node) => node.path === resumeHint)) {
-      return resumeHint
     }
   }
 
@@ -135,7 +112,6 @@ const branchEdgeLabel = (
   return `${triggerLabel(definition)}${suffix}${localWith}`
 }
 
-/** Stock renderer plus route-aware target resolution for local.with transitions. */
 const makeRouteAwareMermaidRenderer = <MachineValue, Snapshot>(
   baseInspection: InspectionApi<MachineValue, Snapshot>,
   routeHints: ReadonlyMap<string, string>
@@ -184,29 +160,23 @@ const makeRouteAwareMermaidRenderer = <MachineValue, Snapshot>(
   }
 }
 
-const graph = branchGraph
 const formatRoutes = (g: RoutedGraph): string => {
-  const lines = [`Routes for ${g.name} (authoritative):`, ""]
+  const lines = [`Routes for ${g.name}:`, ""]
   for (const node of g.nodes) {
     if (node.terminal) {
       lines.push(`  ${node.id} [terminal]`)
       continue
     }
     for (const route of node.routes) {
-      if (route.pause) {
-        lines.push(`  ${node.id} --[pause]--> __awaitingInput`)
-        lines.push(`    Resume --> ${node.id} (user text becomes edgePrompt)`)
-      } else {
-        const label = route.match.kind === "equals" ? route.match.value : "always"
-        lines.push(`  ${node.id} --[${label}]--> ${route.to}`)
-        if (route.prompt) lines.push(`    edge prompt: ${route.prompt}`)
-        else lines.push(`    edge prompt: (pass through current edgePrompt)`)
-      }
+      const label = route.match.kind === "equals" ? route.match.value : "always"
+      lines.push(`  ${node.id} --[${label}]--> ${route.to}`)
+      lines.push(`    edge prompt: ${route.prompt}`)
     }
   }
   return lines.join("\n")
 }
 
+const graph = branchGraph
 const machine = compileGraph(graph)
 const routeHints = routeHintsFromGraph(graph)
 const text = makeTextRenderer(inspection)(machine)
@@ -216,12 +186,7 @@ const mermaid = makeRouteAwareMermaidRenderer(inspection, routeHints)(machine)
 console.log(formatRoutes(graph))
 console.log("\n=== text ===\n")
 console.log(text)
-console.log("\n=== mermaid (stock — compound local.with targets) ===\n")
+console.log("\n=== mermaid (stock) ===\n")
 console.log(mermaidStock)
-console.log("\n=== mermaid (route-aware — paste at https://mermaid.live) ===\n")
+console.log("\n=== mermaid (route-aware) ===\n")
 console.log(mermaid)
-
-if (process.env.VIZ_DEBUG === "1") {
-  console.log("\n=== transitionDefinitions ===\n")
-  console.log(JSON.stringify(Machine.transitionDefinitions(machine), null, 2))
-}

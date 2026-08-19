@@ -1,46 +1,22 @@
 // @ts-nocheck — runtime graph compiler; types intentionally relaxed for PoC speed.
 /**
  * Node-owned routes. Each route.prompt is the edge prompt handed TO the next node.
- * Pause routes emit NeedInput and wait for Resume — input collection is external.
- *
- * For a readable hand-written equivalent, see color-picker-hardcoded.ts.
+ * For external callback pattern (emit + event resume), see external-callback-example.ts.
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
-import { launchMachine, type HumanInputRequest } from "./machine-host.ts"
-
-export type { HumanInputRequest }
-
-const HUMAN_MESSAGE = "What is your favorite color?"
-const AWAITING = "__awaitingInput"
 
 class Job extends Schema.TaggedClass<Job>("Job")("Job", {
-  edgePrompt: Schema.String,
-  returnNode: Schema.optional(Schema.String),
-  humanMessage: Schema.optional(Schema.String)
+  edgePrompt: Schema.String
 }) {}
-
-class Resume extends Schema.TaggedClass<Resume>("Resume")("Resume", {
-  text: Schema.String
-}) {}
-
-class NeedInput extends Schema.TaggedClass<NeedInput>("NeedInput")("NeedInput", {
-  message: Schema.String,
-  returnNode: Schema.String
-}) {}
-
-const GraphEvents = Machine.events(Resume)
-const GraphEmissions = Machine.emittedEvents(NeedInput)
 
 export type OutputMatch =
   | { kind: "always" }
   | { kind: "equals"; key: string; value: string }
 
 export type Route = {
-  to?: string
-  prompt?: string
-  pause?: boolean
-  message?: string
+  to: string
+  prompt: string
   match: OutputMatch
 }
 
@@ -69,10 +45,6 @@ export const branchGraph: RoutedGraph = {
           to: "reviewer",
           prompt: "Passes review? Reply exactly PASS or FIX.",
           match: { kind: "equals", key: "decision", value: "CONTINUE" }
-        },
-        {
-          pause: true,
-          match: { kind: "equals", key: "decision", value: "HUMAN" }
         }
       ]
     },
@@ -98,17 +70,11 @@ export const branchGraph: RoutedGraph = {
 
 type JobChild = Record<string, { from: () => unknown }>
 type Target = {
-  from: (
-    input: { edgePrompt: string; returnNode?: string; humanMessage?: string },
-    pick: (job: JobChild) => unknown
-  ) => unknown
+  from: (input: { edgePrompt: string }, pick: (job: JobChild) => unknown) => unknown
 }
 
 const goTo = (target: Target, edgePrompt: string, next: string) =>
   target.from({ edgePrompt }, (job) => job[next].from())
-
-const goToAwaiting = (target: Target, edgePrompt: string, returnNode: string, message: string) =>
-  target.from({ edgePrompt, returnNode, humanMessage: message }, (job) => job[AWAITING].from())
 
 const workLog = (systemPrompt: string | undefined, edgePrompt: string) => {
   console.log(`  system prompt: ${systemPrompt ?? ""} ... edge prompt: ${edgePrompt}`)
@@ -124,9 +90,6 @@ const validateGraph = (graph: RoutedGraph) => {
     }
     if (node.routes.length === 0) throw new Error(`${graph.name}: non-terminal node "${node.id}" needs routes`)
     for (const route of node.routes) {
-      if (route.pause) continue
-      if (!route.to) throw new Error(`${graph.name}: route from "${node.id}" needs to`)
-      if (!route.prompt) throw new Error(`${graph.name}: route from "${node.id}" to "${route.to}" needs prompt`)
       if (!nodeIds.has(route.to)) throw new Error(`${graph.name}: unknown route target "${route.to}"`)
     }
   }
@@ -142,29 +105,10 @@ export const compileGraph = (graph: RoutedGraph) => {
   const childStates = Object.fromEntries(
     graph.nodes.map((n) => [n.id, n.terminal ? { type: "final" as const } : {}])
   )
-  childStates[AWAITING] = {}
   const States = Machine.states({
     Job: { schema: Job, initial: graph.entry, states: childStates }
   })
   const states: Record<string, object> = {}
-
-  states[AWAITING] = {
-    entry: (state, enqueue) => {
-      console.log(`  entering ${AWAITING}`)
-      const message = state.humanMessage ?? HUMAN_MESSAGE
-      enqueue.emit(GraphEmissions.NeedInput({ message, returnNode: state.returnNode ?? graph.entry }))
-      return undefined
-    },
-    on: {
-      Resume: (to) =>
-        to.local.with.resolve(({ event, state, containingState, target }) => {
-          const ctx = state ?? containingState
-          const returnNode = ctx.returnNode ?? graph.entry
-          console.log(`  resume at ${returnNode} with: ${event.text}`)
-          return goTo(target as Target, event.text, returnNode)
-        })
-    }
-  }
 
   for (const node of graph.nodes) {
     if (node.terminal) {
@@ -186,48 +130,26 @@ export const compileGraph = (graph: RoutedGraph) => {
       invoke: (from) =>
         from
           .effect(`${node.id}-agent`, ({ containingState }) =>
-            Effect.gen(function* () {
+            Effect.sync(() => {
               workLog(node.systemPrompt, containingState.edgePrompt)
-              const pick = mockOutput(routes)
-              const pauseRoute = routes.find(
-                (r) => r.pause && r.match.kind === "equals" && r.match.value === pick
-              )
-              if (pauseRoute) {
-                const message = pauseRoute.message ?? HUMAN_MESSAGE
-                console.log(`  agent response: ${message}`)
-                return { tag: "human" as const, message }
-              }
-              return { tag: "route" as const, value: pick }
+              return mockOutput(routes)
             })
           )
           .onDone((to) => {
             const branchSpec: Record<string, { title: string; target: unknown }> = {
-              human: { title: "human", target: to.local.with },
               none: { target: to.none }
             }
-            for (const route of routes.filter((r) => !r.pause)) {
-              const key = route.match.kind === "equals" ? route.match.value : route.to!
+            for (const route of routes) {
+              const key = route.match.kind === "equals" ? route.match.value : route.to
               branchSpec[key] = { title: key, target: to.local.with }
             }
             return to.branches(branchSpec).resolve(({ output, select, containingState }) => {
-              if (output.tag === "human") {
-                return select.human.from(
-                  {
-                    edgePrompt: containingState.edgePrompt,
-                    returnNode: node.id,
-                    humanMessage: output.message
-                  },
-                  (job) => job[AWAITING].from()
-                )
-              }
-              if (output.tag === "route") {
-                for (const route of routes.filter((r) => !r.pause)) {
-                  if (route.match.kind === "equals" && output.value === route.match.value) {
-                    return select[route.match.value].from(
-                      { edgePrompt: route.prompt! },
-                      (job) => job[route.to!].from()
-                    )
-                  }
+              for (const route of routes) {
+                if (route.match.kind === "equals" && output === route.match.value) {
+                  return select[route.match.value].from(
+                    { edgePrompt: route.prompt },
+                    (job) => job[route.to].from()
+                  )
                 }
               }
               return select.none()
@@ -239,23 +161,17 @@ export const compileGraph = (graph: RoutedGraph) => {
   return Machine.make({
     id: graph.name,
     states: States.states,
-    events: GraphEvents,
-    emittedEvents: GraphEmissions,
+    events: Machine.events(),
     input: Job,
     initial: (to) =>
       to.Job.initial.resolve(({ input, target }) => goTo(target as Target, input.edgePrompt, graph.entry))
   }).handle({ Job: { states } })
 }
 
-/**
- * Run a graph. When the machine pauses, `provideInput` is called (outside Effect).
- * Return text to resume; the host sends Resume internally.
- */
-export const launchGraph = (
-  graph: RoutedGraph,
-  edgePrompt: string,
-  provideInput: (request: HumanInputRequest) => Promise<string>
-): Promise<void> =>
-  launchMachine(compileGraph(graph), new Job({ edgePrompt }), provideInput, (text) =>
-    GraphEvents.Resume({ text })
+export const launchGraph = (graph: RoutedGraph, edgePrompt: string): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const ref = yield* Machine.start(compileGraph(graph), new Job({ edgePrompt }))
+      yield* ref.join
+    })
   )

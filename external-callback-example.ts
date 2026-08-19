@@ -1,6 +1,6 @@
-// @ts-nocheck — idiomatic effect-machine: emissions + public events (no stdin).
+// @ts-nocheck — idiomatic effect-machine: emissions + public events (standalone example).
 /**
- * Two-node color workflow (hardcoded, library-native):
+ * External callback pattern (hardcoded, library-native):
  *
  *   colorPicker  --50% auto-->  colorLogger  (logs cyan)
  *   colorPicker  --50% wait-->  (rests in colorPicker, emits NeedColor)
@@ -11,7 +11,7 @@
  *   - Machine.prepare + emissions stream    → observe before start
  *   - ref.send(publicEvent)                 → resume waiting state
  *
- * Run: npm run color-demo
+ * Not wired to CLI — import runColorPicker() to run manually.
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Deferred, Effect, Schema, Stream } from "effect"
@@ -64,7 +64,7 @@ export const ColorPickerMachine = Machine.make({
         to.branches({
           auto: { title: "auto", target: to.full.colorLogger() },
           wait: { title: "needColor", target: to.none }
-        }).resolve(({ output, select, target }, enqueue) => {
+        }).resolve(({ output, select }, enqueue) => {
           if (output.tag === "auto") {
             console.log(`  [colorPicker] auto route → ${output.color}`)
             return select.auto(new ColorLogger({ color: output.color }))
