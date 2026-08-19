@@ -1,0 +1,4 @@
+{
+  "name": "statemachines",
+  "install": "bash .cursor/install.sh"
+}
