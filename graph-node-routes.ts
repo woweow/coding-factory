@@ -33,36 +33,6 @@ export type RoutedGraph = {
   nodes: RoutedNode[]
 }
 
-export const linearGraph: RoutedGraph = {
-  name: "LinearGraph",
-  entry: "implementer",
-  nodes: [
-    {
-      id: "implementer",
-      systemPrompt: "You implement code changes.",
-      routes: [
-        {
-          to: "reviewer",
-          prompt: "Review the implementation.",
-          match: { kind: "always" }
-        }
-      ]
-    },
-    {
-      id: "reviewer",
-      systemPrompt: "You review code changes.",
-      routes: [
-        {
-          to: "complete",
-          prompt: "Create PR for this implementation.",
-          match: { kind: "always" }
-        }
-      ]
-    },
-    { id: "complete", terminal: true, systemPrompt: "Workflow complete.", routes: [] }
-  ]
-}
-
 export const branchGraph: RoutedGraph = {
   name: "BranchGraph",
   entry: "implementer",
@@ -219,12 +189,8 @@ const compileGraph = (graph: RoutedGraph) => {
   }).handle({ Job: { states } })
 }
 
-export const runGraphExamples = Effect.gen(function* () {
-  console.log("\n=== Routed graph (node-owned routes, effect-machine) ===")
-  for (const graph of [linearGraph, branchGraph]) {
-    console.log(`\n--- ${graph.name} ---`)
-    const machine = compileGraph(graph)
-    const ref = yield* Machine.start(machine, new Job({ edgePrompt: "Implement this feature request." }))
-    yield* ref.join
-  }
+export const runGraph = Effect.gen(function* () {
+  const machine = compileGraph(branchGraph)
+  const ref = yield* Machine.start(machine, new Job({ edgePrompt: "Implement this feature request." }))
+  yield* ref.join
 })

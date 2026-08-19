@@ -1,8 +1,4 @@
 import { Effect } from "effect"
-import { runGraphExamples } from "./graph-node-routes.ts"
+import { runGraph } from "./graph-node-routes.ts"
 
-const program = Effect.gen(function* () {
-  yield* runGraphExamples
-})
-
-await Effect.runPromise(program)
+await Effect.runPromise(runGraph)
