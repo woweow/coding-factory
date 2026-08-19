@@ -8,13 +8,13 @@
     "start": "tsx index.ts",
     "dev": "tsx index.ts",
     "viz": "tsx graph-visualize.ts",
-    "turnstile": "tsx index-turnstile.ts",
+    "color-demo": "tsx index-color-demo.ts",
     "typecheck": "tsc --noEmit"
   },
   "author": "woweow",
   "license": "ISC",
   "dependencies": {
-    "@typeonce/effect-machine": "^0.15.0",
+    "@typeonce/effect-machine": "^0.18.0",
     "effect": "4.0.0-rc.109"
   },
   "devDependencies": {
