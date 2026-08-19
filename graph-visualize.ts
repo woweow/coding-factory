@@ -28,7 +28,7 @@ const routeHintsFromGraph = (graph: RoutedGraph): ReadonlyMap<string, string> =>
   const hints = new Map<string, string>()
 
   for (const node of graph.nodes) {
-    if (node.terminal) continue
+    if (node.routes.length === 0) continue
     const source = `${root}.${node.id}`
     for (const route of node.routes) {
       const key = route.match.kind === "equals" ? route.match.value : route.to
@@ -163,8 +163,8 @@ const makeRouteAwareMermaidRenderer = <MachineValue, Snapshot>(
 const formatRoutes = (g: RoutedGraph): string => {
   const lines = [`Routes for ${g.name}:`, ""]
   for (const node of g.nodes) {
-    if (node.terminal) {
-      lines.push(`  ${node.id} [terminal]`)
+    if (node.routes.length === 0) {
+      lines.push(`  ${node.id} (no routes)`)
       continue
     }
     for (const route of node.routes) {

@@ -1,6 +1,7 @@
 // @ts-nocheck — runtime graph compiler; types intentionally relaxed for PoC speed.
 /**
  * Node-owned routes. Each route.prompt is the edge prompt handed TO the next node.
+ * A node with no routes is terminal — no explicit flag needed.
  * For external callback pattern (emit + event resume), see external-callback-example.ts.
  */
 import { Machine } from "@typeonce/effect-machine"
@@ -22,7 +23,6 @@ export type Route = {
 
 export type RoutedNode = {
   id: string
-  terminal?: boolean
   systemPrompt?: string
   routes: Route[]
 }
@@ -64,7 +64,7 @@ export const branchGraph: RoutedGraph = {
         }
       ]
     },
-    { id: "complete", terminal: true, systemPrompt: "Feature completed.", routes: [] }
+    { id: "complete", systemPrompt: "Feature completed.", routes: [] }
   ]
 }
 
@@ -80,15 +80,12 @@ const workLog = (systemPrompt: string | undefined, edgePrompt: string) => {
   console.log(`  system prompt: ${systemPrompt ?? ""} ... edge prompt: ${edgePrompt}`)
 }
 
+const isTerminal = (node: RoutedNode) => node.routes.length === 0
+
 const validateGraph = (graph: RoutedGraph) => {
   const nodeIds = new Set(graph.nodes.map((n) => n.id))
   if (!nodeIds.has(graph.entry)) throw new Error(`${graph.name}: entry node does not exist`)
   for (const node of graph.nodes) {
-    if (node.terminal) {
-      if (node.routes.length > 0) throw new Error(`${graph.name}: terminal node "${node.id}" cannot have routes`)
-      continue
-    }
-    if (node.routes.length === 0) throw new Error(`${graph.name}: non-terminal node "${node.id}" needs routes`)
     for (const route of node.routes) {
       if (!nodeIds.has(route.to)) throw new Error(`${graph.name}: unknown route target "${route.to}"`)
     }
@@ -103,7 +100,7 @@ const mockOutput = (routes: Route[]) => {
 export const compileGraph = (graph: RoutedGraph) => {
   validateGraph(graph)
   const childStates = Object.fromEntries(
-    graph.nodes.map((n) => [n.id, n.terminal ? { type: "final" as const } : {}])
+    graph.nodes.map((n) => [n.id, isTerminal(n) ? { type: "final" as const } : {}])
   )
   const States = Machine.states({
     Job: { schema: Job, initial: graph.entry, states: childStates }
@@ -111,30 +108,19 @@ export const compileGraph = (graph: RoutedGraph) => {
   const states: Record<string, object> = {}
 
   for (const node of graph.nodes) {
-    if (node.terminal) {
-      states[node.id] = {
-        entry: () => {
-          console.log(`  entering ${node.id}`)
-          return undefined
-        }
+    const routes = node.routes
+    const handler: Record<string, unknown> = {
+      entry: ({ containingState }) => {
+        console.log(`  entering ${node.id}`)
+        workLog(node.systemPrompt, containingState.edgePrompt)
+        return undefined
       }
-      continue
     }
 
-    const routes = node.routes
-    states[node.id] = {
-      entry: () => {
-        console.log(`  entering ${node.id}`)
-        return undefined
-      },
-      invoke: (from) =>
+    if (routes.length > 0) {
+      handler.invoke = (from) =>
         from
-          .effect(`${node.id}-agent`, ({ containingState }) =>
-            Effect.sync(() => {
-              workLog(node.systemPrompt, containingState.edgePrompt)
-              return mockOutput(routes)
-            })
-          )
+          .effect(`${node.id}-agent`, () => Effect.sync(() => mockOutput(routes)))
           .onDone((to) => {
             const branchSpec: Record<string, { title: string; target: unknown }> = {
               none: { target: to.none }
@@ -143,7 +129,7 @@ export const compileGraph = (graph: RoutedGraph) => {
               const key = route.match.kind === "equals" ? route.match.value : route.to
               branchSpec[key] = { title: key, target: to.local.with }
             }
-            return to.branches(branchSpec).resolve(({ output, select, containingState }) => {
+            return to.branches(branchSpec).resolve(({ output, select }) => {
               for (const route of routes) {
                 if (route.match.kind === "equals" && output === route.match.value) {
                   return select[route.match.value].from(
@@ -156,6 +142,8 @@ export const compileGraph = (graph: RoutedGraph) => {
             })
           })
     }
+
+    states[node.id] = handler
   }
 
   return Machine.make({
