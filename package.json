@@ -8,7 +8,6 @@
     "start": "tsx index.ts",
     "dev": "tsx index.ts",
     "viz": "tsx graph-visualize.ts",
-    "turnstile": "tsx index-turnstile.ts",
     "typecheck": "tsc --noEmit"
   },
   "author": "woweow",
