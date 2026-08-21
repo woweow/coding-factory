@@ -3,10 +3,21 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { TestWorkflowEnvironment } from "@temporalio/testing"
 import { Worker } from "@temporalio/worker"
+import { branchGraph } from "../graph.ts"
+import type { NodeWork } from "./activities.ts"
 import { TASK_QUEUE } from "./shared.ts"
-import { twoNodeWorkflow } from "./workflows.ts"
+import { graphWorkflow } from "./workflows.ts"
 
-test("twoNodeWorkflow runs implement then verify", { timeout: 180_000 }, async (t) => {
+const scripted = (outputs: string[]) => {
+  let i = 0
+  return async (_work: NodeWork) => {
+    const next = outputs[i++]
+    if (!next) throw new Error("script exhausted")
+    return next
+  }
+}
+
+test("graphWorkflow walks implementer -> reviewer -> complete", { timeout: 180_000 }, async (t) => {
   const testEnv = await TestWorkflowEnvironment.createLocal()
   t.after(async () => {
     await testEnv.teardown()
@@ -16,17 +27,36 @@ test("twoNodeWorkflow runs implement then verify", { timeout: 180_000 }, async (
     connection: nativeConnection,
     taskQueue: TASK_QUEUE,
     workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
-    activities: {
-      implement: async (ticket: string) => `implemented: ${ticket}`,
-      verify: async (work: string) => `verified: ${work}`
-    }
+    activities: { runNode: scripted(["CONTINUE", "PASS"]) }
   })
   await worker.runUntil(async () => {
-    const result = await client.workflow.execute(twoNodeWorkflow, {
+    const path = await client.workflow.execute(graphWorkflow, {
       taskQueue: TASK_QUEUE,
-      workflowId: "two-node-test",
-      args: ["login page"]
+      workflowId: "graph-pass",
+      args: [branchGraph, "Implement this feature request."]
     })
-    assert.equal(result, "verified: implemented: login page")
+    assert.deepEqual(path, ["implementer", "reviewer", "complete"])
+  })
+})
+
+test("graphWorkflow loops FIX then PASS", { timeout: 180_000 }, async (t) => {
+  const testEnv = await TestWorkflowEnvironment.createLocal()
+  t.after(async () => {
+    await testEnv.teardown()
+  })
+  const { client, nativeConnection } = testEnv
+  const worker = await Worker.create({
+    connection: nativeConnection,
+    taskQueue: TASK_QUEUE,
+    workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
+    activities: { runNode: scripted(["CONTINUE", "FIX", "CONTINUE", "PASS"]) }
+  })
+  await worker.runUntil(async () => {
+    const path = await client.workflow.execute(graphWorkflow, {
+      taskQueue: TASK_QUEUE,
+      workflowId: "graph-fix",
+      args: [branchGraph, "Implement this feature request."]
+    })
+    assert.deepEqual(path, ["implementer", "reviewer", "implementer", "reviewer", "complete"])
   })
 })

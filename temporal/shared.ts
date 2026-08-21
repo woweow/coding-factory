@@ -1,1 +1,1 @@
-export const TASK_QUEUE = "two-node-queue"
+export const TASK_QUEUE = "graph-queue"

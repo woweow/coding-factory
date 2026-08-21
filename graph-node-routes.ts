@@ -6,67 +6,19 @@
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
+import {
+  isTerminal,
+  validateGraph,
+  type Route,
+  type RoutedGraph
+} from "./graph.ts"
+
+export type { OutputMatch, Route, RoutedGraph, RoutedNode } from "./graph.ts"
+export { branchGraph } from "./graph.ts"
 
 class Job extends Schema.TaggedClass<Job>("Job")("Job", {
   edgePrompt: Schema.String
 }) {}
-
-export type OutputMatch =
-  | { kind: "always" }
-  | { kind: "equals"; key: string; value: string }
-
-export type Route = {
-  to: string
-  prompt: string
-  match: OutputMatch
-}
-
-export type RoutedNode = {
-  id: string
-  systemPrompt?: string
-  routes: Route[]
-}
-
-export type RoutedGraph = {
-  name: string
-  entry: string
-  nodes: RoutedNode[]
-}
-
-export const branchGraph: RoutedGraph = {
-  name: "BranchGraph",
-  entry: "implementer",
-  nodes: [
-    {
-      id: "implementer",
-      systemPrompt: "You implement code changes.",
-      routes: [
-        {
-          to: "reviewer",
-          prompt: "Passes review? Reply exactly PASS or FIX.",
-          match: { kind: "equals", key: "decision", value: "CONTINUE" }
-        }
-      ]
-    },
-    {
-      id: "reviewer",
-      systemPrompt: "You review and decide pass/fix.",
-      routes: [
-        {
-          to: "complete",
-          prompt: "Mark feature as complete.",
-          match: { kind: "equals", key: "decision", value: "PASS" }
-        },
-        {
-          to: "implementer",
-          prompt: "Fix the issues from review.",
-          match: { kind: "equals", key: "decision", value: "FIX" }
-        }
-      ]
-    },
-    { id: "complete", systemPrompt: "Feature completed.", routes: [] }
-  ]
-}
 
 type JobChild = Record<string, { from: () => unknown }>
 type Target = {
@@ -78,18 +30,6 @@ const goTo = (target: Target, edgePrompt: string, next: string) =>
 
 const workLog = (systemPrompt: string | undefined, edgePrompt: string) => {
   console.log(`  system prompt: ${systemPrompt ?? ""} ... edge prompt: ${edgePrompt}`)
-}
-
-const isTerminal = (node: RoutedNode) => node.routes.length === 0
-
-const validateGraph = (graph: RoutedGraph) => {
-  const nodeIds = new Set(graph.nodes.map((n) => n.id))
-  if (!nodeIds.has(graph.entry)) throw new Error(`${graph.name}: entry node does not exist`)
-  for (const node of graph.nodes) {
-    for (const route of node.routes) {
-      if (!nodeIds.has(route.to)) throw new Error(`${graph.name}: unknown route target "${route.to}"`)
-    }
-  }
 }
 
 const mockOutput = (routes: Route[]) => {

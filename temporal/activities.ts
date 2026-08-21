@@ -1,7 +1,11 @@
-export async function implement(ticket: string): Promise<string> {
-  return `implemented: ${ticket}`
+export type NodeWork = {
+  id: string
+  systemPrompt: string
+  edgePrompt: string
+  choices: string[]
 }
 
-export async function verify(work: string): Promise<string> {
-  return `verified: ${work}`
+export async function runNode(work: NodeWork): Promise<string> {
+  console.log(`  ${work.id}: ${work.systemPrompt} | ${work.edgePrompt}`)
+  return work.choices[0] ?? "done"
 }
