@@ -8,15 +8,24 @@
     "start": "tsx index.ts",
     "dev": "tsx index.ts",
     "viz": "tsx graph-visualize.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test temporal/workflows.test.ts",
+    "temporal:worker": "tsx temporal/worker.ts",
+    "temporal:start": "tsx temporal/client.ts"
   },
   "author": "woweow",
   "license": "ISC",
   "dependencies": {
+    "@temporalio/activity": "^1.22.0",
+    "@temporalio/client": "^1.22.0",
+    "@temporalio/envconfig": "^1.22.0",
+    "@temporalio/worker": "^1.22.0",
+    "@temporalio/workflow": "^1.22.0",
     "@typeonce/effect-machine": "^0.18.0",
     "effect": "4.0.0-rc.109"
   },
   "devDependencies": {
+    "@temporalio/testing": "^1.22.0",
     "@types/node": "^26.2.0",
     "tsx": "^4.23.12",
     "typescript": "5.9"

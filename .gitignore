@@ -1,2 +1,5 @@
 node_modules/
 .DS_Store
+temporal.db
+temporal.db-shm
+temporal.db-wal
