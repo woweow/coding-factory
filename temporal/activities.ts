@@ -1,11 +1,22 @@
-export type NodeWork = {
-  id: string
+import type { Route } from "../graph.ts"
+
+export type AgentInput = {
+  nodeId: string
   systemPrompt: string
   edgePrompt: string
-  choices: string[]
+  routes: Route[]
 }
 
-export async function runNode(work: NodeWork): Promise<string> {
-  console.log(`  ${work.id}: ${work.systemPrompt} | ${work.edgePrompt}`)
-  return work.choices[0] ?? "done"
+export async function fakeAgent(input: AgentInput): Promise<Record<string, string>> {
+  console.log(`fakeAgent ${input.nodeId}`)
+  console.log(`  system prompt: ${input.systemPrompt}`)
+  console.log(`  edge prompt: ${input.edgePrompt}`)
+  const first = input.routes.find((route) => route.match.kind === "equals")
+  if (!first || first.match.kind !== "equals") {
+    console.log("  fake output: {}")
+    return {}
+  }
+  const output = { [first.match.key]: first.match.value }
+  console.log(`  fake output: ${JSON.stringify(output)}`)
+  return output
 }

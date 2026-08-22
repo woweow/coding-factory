@@ -6,12 +6,7 @@
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
-import {
-  isTerminal,
-  validateGraph,
-  type Route,
-  type RoutedGraph
-} from "./graph.ts"
+import { validateGraph, type Route, type RoutedGraph } from "./graph.ts"
 
 export type { OutputMatch, Route, RoutedGraph, RoutedNode } from "./graph.ts"
 export { branchGraph } from "./graph.ts"
@@ -40,7 +35,7 @@ const mockOutput = (routes: Route[]) => {
 export const compileGraph = (graph: RoutedGraph) => {
   validateGraph(graph)
   const childStates = Object.fromEntries(
-    graph.nodes.map((n) => [n.id, isTerminal(n) ? { type: "final" as const } : {}])
+    graph.nodes.map((n) => [n.id, n.routes.length === 0 ? { type: "final" as const } : {}])
   )
   const States = Machine.states({
     Job: { schema: Job, initial: graph.entry, states: childStates }

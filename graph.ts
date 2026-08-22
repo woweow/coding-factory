@@ -55,19 +55,11 @@ export const branchGraph: RoutedGraph = {
   ]
 }
 
-export const isTerminal = (node: RoutedNode) => node.routes.length === 0
-
 export const nodeById = (graph: RoutedGraph, id: string): RoutedNode => {
   const node = graph.nodes.find((n) => n.id === id)
   if (!node) throw new Error(`${graph.name}: unknown node ${id}`)
   return node
 }
-
-export const routeChoices = (routes: Route[]): string[] =>
-  routes.map((r) => (r.match.kind === "equals" ? r.match.value : r.to))
-
-export const matchRoute = (routes: Route[], output: string): Route | undefined =>
-  routes.find((r) => r.match.kind === "always" || (r.match.kind === "equals" && r.match.value === output))
 
 export const validateGraph = (graph: RoutedGraph) => {
   const nodeIds = new Set(graph.nodes.map((n) => n.id))
