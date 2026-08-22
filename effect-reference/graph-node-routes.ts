@@ -6,11 +6,11 @@
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
-import { firstEqualsOutput, invokeAgent } from "./agent.ts"
-import { validateGraph, type RoutedGraph } from "./graph.ts"
+import { firstEqualsOutput, invokeAgent } from "../agent.ts"
+import { validateGraph, type RoutedGraph } from "../graph.ts"
 
-export type { OutputMatch, Route, RoutedGraph, RoutedNode } from "./graph.ts"
-export { branchGraph } from "./graph.ts"
+export type { OutputMatch, Route, RoutedGraph, RoutedNode } from "../graph.ts"
+export { branchGraph } from "../graph.ts"
 
 class Job extends Schema.TaggedClass<Job>("Job")("Job", {
   edgePrompt: Schema.String

@@ -9,5 +9,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts", "temporal/**/*.ts"]
+  "include": ["*.ts", "temporal/**/*.ts", "effect-reference/**/*.ts", "temporal-reference/**/*.ts"]
 }

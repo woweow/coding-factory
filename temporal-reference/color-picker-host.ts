@@ -1,7 +1,6 @@
 import type { Client, WorkflowHandle } from "@temporalio/client"
-import { HOST_COLOR } from "./color-picker-shared.ts"
+import { HOST_COLOR, TASK_QUEUE } from "./color-picker-shared.ts"
 import { colorPickedSignal, colorPickerWorkflow, needColorQuery } from "./color-picker-workflow.ts"
-import { TASK_QUEUE } from "./shared.ts"
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 

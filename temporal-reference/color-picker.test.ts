@@ -5,9 +5,8 @@ import { TestWorkflowEnvironment } from "@temporalio/testing"
 import { Worker } from "@temporalio/worker"
 import { notifyNeedColor } from "./color-picker-activities.ts"
 import { runColorPickerHost, startColorPicker, waitForNeedColor } from "./color-picker-host.ts"
-import { DEFAULT_COLOR, HOST_COLOR, NEED_COLOR_MESSAGE, type PickRoute } from "./color-picker-shared.ts"
+import { DEFAULT_COLOR, HOST_COLOR, NEED_COLOR_MESSAGE, TASK_QUEUE, type PickRoute } from "./color-picker-shared.ts"
 import { colorPickedSignal } from "./color-picker-workflow.ts"
-import { TASK_QUEUE } from "./shared.ts"
 
 const runWithPick = async (route: PickRoute, workflowId: string): Promise<string> => {
   const testEnv = await TestWorkflowEnvironment.createLocal()
@@ -15,7 +14,7 @@ const runWithPick = async (route: PickRoute, workflowId: string): Promise<string
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
       taskQueue: TASK_QUEUE,
-      workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
+      workflowsPath: fileURLToPath(new URL("./color-picker-workflow.ts", import.meta.url)),
       activities: {
         pickRoute: async (): Promise<PickRoute> => route,
         notifyNeedColor
@@ -49,7 +48,7 @@ test("colorPickerWorkflow stays paused until ColorPicked", { timeout: 180_000 },
   const worker = await Worker.create({
     connection: testEnv.nativeConnection,
     taskQueue: TASK_QUEUE,
-    workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
+    workflowsPath: fileURLToPath(new URL("./color-picker-workflow.ts", import.meta.url)),
     activities: {
       pickRoute: async (): Promise<PickRoute> => ({ tag: "needColor" }),
       notifyNeedColor: async (message: string) => {

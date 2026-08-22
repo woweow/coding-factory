@@ -3,8 +3,7 @@ import { TestWorkflowEnvironment } from "@temporalio/testing"
 import { Worker } from "@temporalio/worker"
 import { notifyNeedColor } from "./color-picker-activities.ts"
 import { runColorPickerHost, startColorPicker } from "./color-picker-host.ts"
-import { DEFAULT_COLOR, type PickRoute } from "./color-picker-shared.ts"
-import { TASK_QUEUE } from "./shared.ts"
+import { DEFAULT_COLOR, TASK_QUEUE, type PickRoute } from "./color-picker-shared.ts"
 
 const scriptedPick = (routes: PickRoute[]) => {
   let i = 0
@@ -22,7 +21,7 @@ const main = async (): Promise<void> => {
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
       taskQueue: TASK_QUEUE,
-      workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
+      workflowsPath: fileURLToPath(new URL("./color-picker-workflow.ts", import.meta.url)),
       activities: {
         pickRoute: scriptedPick([{ tag: "auto", color: DEFAULT_COLOR }, { tag: "needColor" }]),
         notifyNeedColor

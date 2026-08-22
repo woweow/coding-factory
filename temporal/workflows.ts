@@ -33,5 +33,3 @@ export async function graphWorkflow(graph: RoutedGraph, edgePrompt: string): Pro
   }
   throw ApplicationFailure.nonRetryable("graph hop cap")
 }
-
-export { colorPickerWorkflow } from "./color-picker-workflow.ts"

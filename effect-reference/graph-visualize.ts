@@ -1,17 +1,16 @@
 // @ts-nocheck — PoC visualization CLI; renderer types are looser than Machine exports.
 /**
  * Compile branchGraph and print text + Mermaid views (no run).
- * Usage: npm run viz
  */
 import { Machine } from "@typeonce/effect-machine"
 import { branchGraph, compileGraph, type RoutedGraph } from "./graph-node-routes.ts"
-import { makeMermaidRenderer as makeStockMermaidRenderer } from "./effect-machine/test/machine/visualization/mermaid.ts"
-import { makeTextRenderer } from "./effect-machine/test/machine/visualization/text.ts"
+import { makeMermaidRenderer as makeStockMermaidRenderer } from "../effect-machine/test/machine/visualization/mermaid.ts"
+import { makeTextRenderer } from "../effect-machine/test/machine/visualization/text.ts"
 import type {
   InspectionApi,
   StateNode,
   TransitionDefinition
-} from "./effect-machine/test/machine/visualization/model.ts"
+} from "../effect-machine/test/machine/visualization/model.ts"
 
 const inspection = {
   stateNodes: Machine.stateNodes,
