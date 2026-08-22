@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent Cloud Agent bootstrap for the statemachines project.
-# Prepares the Node toolchain pinned in .nvmrc, the effect-machine submodule,
-# and project dependencies. Safe to run repeatedly.
+# Prepares the Node toolchain pinned in .nvmrc, Temporal CLI, the
+# effect-machine submodule, and project dependencies. Safe to run repeatedly.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,8 +28,45 @@ if [ -d "$PRIORITY_BIN" ] && [ -w "$PRIORITY_BIN" ]; then
   done
 fi
 
+install_temporal_cli() {
+  local dest_dir platform arch tmp archive
+  dest_dir="$PRIORITY_BIN"
+  if [ ! -d "$dest_dir" ] || [ ! -w "$dest_dir" ]; then
+    dest_dir="${HOME}/.local/bin"
+    mkdir -p "$dest_dir"
+  fi
+  if [ -x "${dest_dir}/temporal" ] || command -v temporal >/dev/null 2>&1; then
+    return
+  fi
+  case "$(uname -s)" in
+    Linux) platform=linux ;;
+    Darwin) platform=darwin ;;
+    *)
+      echo "unsupported OS for Temporal CLI: $(uname -s)" >&2
+      return 1
+      ;;
+  esac
+  case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *)
+      echo "unsupported arch for Temporal CLI: $(uname -m)" >&2
+      return 1
+      ;;
+  esac
+  tmp="$(mktemp -d)"
+  archive="${tmp}/temporal.tgz"
+  curl -fsSL "https://temporal.download/cli/archive/latest?platform=${platform}&arch=${arch}" -o "$archive"
+  tar -xzf "$archive" -C "$tmp"
+  cp "${tmp}/temporal" "${dest_dir}/temporal"
+  chmod 0755 "${dest_dir}/temporal"
+  rm -rf "$tmp"
+}
+
+install_temporal_cli
+
 # Fetch the effect-machine submodule.
 git submodule update --init --recursive
 
-# Install dependencies from the lockfile.
+# Install dependencies from the lockfile (includes Temporal TypeScript SDK).
 npm ci

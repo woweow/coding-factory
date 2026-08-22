@@ -2,6 +2,7 @@
 npm install
 # Temporal CLI: brew install temporal
 # or: curl -sSf https://temporal.download/cli.sh | sh
+# Cloud agents: bash .cursor/install.sh (npm + Temporal CLI)
 npm run effect
 temporal server start-dev --db-filename temporal.db
 npm run temporal:worker
