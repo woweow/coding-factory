@@ -6,7 +6,8 @@
  */
 import { Machine } from "@typeonce/effect-machine"
 import { Effect, Schema } from "effect"
-import { validateGraph, type Route, type RoutedGraph } from "./graph.ts"
+import { firstEqualsOutput, invokeAgent } from "./agent.ts"
+import { validateGraph, type RoutedGraph } from "./graph.ts"
 
 export type { OutputMatch, Route, RoutedGraph, RoutedNode } from "./graph.ts"
 export { branchGraph } from "./graph.ts"
@@ -23,15 +24,6 @@ type Target = {
 const goTo = (target: Target, edgePrompt: string, next: string) =>
   target.from({ edgePrompt }, (job) => job[next].from())
 
-const workLog = (systemPrompt: string | undefined, edgePrompt: string) => {
-  console.log(`  system prompt: ${systemPrompt ?? ""} ... edge prompt: ${edgePrompt}`)
-}
-
-const mockOutput = (routes: Route[]) => {
-  const choices = routes.map((r) => (r.match.kind === "equals" ? r.match.value : "done"))
-  return choices[Math.floor(Math.random() * choices.length)]!
-}
-
 export const compileGraph = (graph: RoutedGraph) => {
   validateGraph(graph)
   const childStates = Object.fromEntries(
@@ -46,8 +38,12 @@ export const compileGraph = (graph: RoutedGraph) => {
     const routes = node.routes
     const handler: Record<string, unknown> = {
       entry: ({ containingState }) => {
-        console.log(`  entering ${node.id}`)
-        workLog(node.systemPrompt, containingState.edgePrompt)
+        invokeAgent({
+          nodeId: node.id,
+          systemPrompt: node.systemPrompt ?? "",
+          edgePrompt: containingState.edgePrompt,
+          routes: node.routes
+        })
         return undefined
       }
     }
@@ -55,7 +51,9 @@ export const compileGraph = (graph: RoutedGraph) => {
     if (routes.length > 0) {
       handler.invoke = (from) =>
         from
-          .effect(`${node.id}-agent`, () => Effect.sync(() => mockOutput(routes)))
+          .effect(`${node.id}-agent`, () =>
+            Effect.sync(() => Object.values(firstEqualsOutput(routes))[0] ?? "done")
+          )
           .onDone((to) => {
             const branchSpec: Record<string, { title: string; target: unknown }> = {
               none: { target: to.none }

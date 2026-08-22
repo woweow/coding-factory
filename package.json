@@ -5,8 +5,10 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "tsx index.ts",
-    "dev": "tsx index.ts",
+    "start": "tsx run-effect.ts",
+    "dev": "tsx run-effect.ts",
+    "effect": "tsx run-effect.ts",
+    "temporal": "tsx temporal/client.ts",
     "viz": "tsx graph-visualize.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 temporal/workflows.test.ts",

@@ -10,7 +10,8 @@ import { graphWorkflow } from "./workflows.ts"
 
 const scripted = (decisions: string[]) => {
   let i = 0
-  return async (_input: AgentInput) => {
+  return async (input: AgentInput) => {
+    if (input.routes.length === 0) return {}
     const decision = decisions[i++]
     if (!decision) throw new Error("script exhausted")
     return { decision }
@@ -27,7 +28,7 @@ test("graphWorkflow walks implementer -> reviewer -> complete", { timeout: 180_0
     connection: nativeConnection,
     taskQueue: TASK_QUEUE,
     workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
-    activities: { fakeAgent: scripted(["CONTINUE", "PASS"]) }
+    activities: { invokeAgent: scripted(["CONTINUE", "PASS"]) }
   })
   await worker.runUntil(async () => {
     const path = await client.workflow.execute(graphWorkflow, {
@@ -49,7 +50,7 @@ test("graphWorkflow loops FIX then PASS", { timeout: 180_000 }, async (t) => {
     connection: nativeConnection,
     taskQueue: TASK_QUEUE,
     workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
-    activities: { fakeAgent: scripted(["CONTINUE", "FIX", "CONTINUE", "PASS"]) }
+    activities: { invokeAgent: scripted(["CONTINUE", "FIX", "CONTINUE", "PASS"]) }
   })
   await worker.runUntil(async () => {
     const path = await client.workflow.execute(graphWorkflow, {
