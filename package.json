@@ -11,7 +11,8 @@
     "temporal": "tsx temporal/client.ts",
     "viz": "tsx graph-visualize.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 temporal/workflows.test.ts",
+    "test": "tsx --test --test-concurrency=1 temporal/workflows.test.ts temporal/color-picker.test.ts",
+    "color-picker": "tsx temporal/color-picker-run.ts",
     "temporal:worker": "tsx temporal/worker.ts",
     "temporal:start": "tsx temporal/client.ts"
   },

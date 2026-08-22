@@ -1,7 +1,8 @@
 import { NativeConnection, Worker } from "@temporalio/worker"
 import { loadClientConnectConfig } from "@temporalio/envconfig"
 import { fileURLToPath } from "node:url"
-import * as activities from "./activities.ts"
+import * as graphActivities from "./activities.ts"
+import * as colorPickerActivities from "./color-picker-activities.ts"
 import { TASK_QUEUE } from "./shared.ts"
 
 async function main(): Promise<void> {
@@ -11,7 +12,7 @@ async function main(): Promise<void> {
     connection,
     namespace: config.namespace,
     workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
-    activities,
+    activities: { ...graphActivities, ...colorPickerActivities },
     taskQueue: TASK_QUEUE
   })
   console.log(`Worker polling ${TASK_QUEUE}`)
