@@ -83,63 +83,6 @@
         }
       }
     },
-    "mcpServerConfig": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["command"],
-          "properties": {
-            "type": { "const": "stdio" },
-            "command": { "type": "string", "minLength": 1 },
-            "args": { "type": "array", "items": { "type": "string" } },
-            "env": {
-              "type": "object",
-              "additionalProperties": { "type": "string" }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["url"],
-          "properties": {
-            "type": { "enum": ["http", "sse"] },
-            "url": { "type": "string", "minLength": 1 },
-            "headers": {
-              "type": "object",
-              "additionalProperties": { "type": "string" }
-            },
-            "auth": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["CLIENT_ID"],
-              "properties": {
-                "CLIENT_ID": { "type": "string", "minLength": 1 },
-                "CLIENT_SECRET": { "type": "string", "minLength": 1 },
-                "scopes": { "type": "array", "items": { "type": "string" } }
-              }
-            }
-          }
-        }
-      ]
-    },
-    "subagent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["description", "prompt"],
-      "properties": {
-        "description": { "type": "string", "minLength": 1 },
-        "prompt": { "type": "string", "minLength": 1 },
-        "model": {
-          "oneOf": [
-            { "const": "inherit" },
-            { "$ref": "#/$defs/modelSelection" }
-          ]
-        },
-        "mcpServers": { "type": "array", "items": { "type": "string" } }
-      }
-    },
     "cursorCloudCreateOptions": {
       "type": "object",
       "additionalProperties": false,
@@ -148,15 +91,7 @@
         "name": { "type": "string", "minLength": 1 },
         "model": { "$ref": "#/$defs/modelSelection" },
         "mode": { "enum": ["agent", "plan"] },
-        "cloud": { "$ref": "#/$defs/cloudAgentOptions" },
-        "mcpServers": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/mcpServerConfig" }
-        },
-        "agents": {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/subagent" }
-        }
+        "cloud": { "$ref": "#/$defs/cloudAgentOptions" }
       }
     },
     "outputMatch": {

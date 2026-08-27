@@ -32,47 +32,18 @@ export type CloudAgentOptions = {
   metadata?: Record<string, string>
 }
 
-export type McpStdioServer = {
-  type?: "stdio"
-  command: string
-  args?: string[]
-  env?: Record<string, string>
-}
-
-export type McpHttpServer = {
-  type?: "http" | "sse"
-  url: string
-  headers?: Record<string, string>
-  auth?: {
-    CLIENT_ID: string
-    CLIENT_SECRET?: string
-    scopes?: string[]
-  }
-}
-
-export type McpServerConfig = McpStdioServer | McpHttpServer
-
-export type AgentDefinition = {
-  description: string
-  prompt: string
-  model?: ModelSelection | "inherit"
-  mcpServers?: string[]
-}
-
 export type ConversationMode = "agent" | "plan"
 
 /**
  * Persistable Agent.create() options for a Cursor Cloud inner worker.
- * Mirrors @cursor/sdk AgentOptions / CloudAgentOptions (docs 2026-08).
- * apiKey and local are forbidden: the factory always uses cloud.repos.
+ * apiKey, local, mcpServers, and subagents are not stored.
+ * Runtime handle (bc-...) lives on the run, not here.
  */
 export type CursorCloudCreateOptions = {
   name?: string
   model: ModelSelection
   mode?: ConversationMode
   cloud: CloudAgentOptions
-  mcpServers?: Record<string, McpServerConfig>
-  agents?: Record<string, AgentDefinition>
 }
 
 export type OutputMatch =

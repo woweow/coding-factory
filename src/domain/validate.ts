@@ -1,13 +1,9 @@
 import type {
-  AgentDefinition,
   CloudAgentOptions,
   CloudEnv,
   CloudRepo,
   ConversationMode,
   CursorCloudCreateOptions,
-  McpHttpServer,
-  McpServerConfig,
-  McpStdioServer,
   ModelParameterValue,
   ModelSelection,
   OutputMatch,
@@ -46,6 +42,9 @@ const scanForbiddenKeys = (value: unknown, path: string, issues: ValidationIssue
     if (key === LOCAL_KEY && (path === "" || path === "agent")) {
       push(issues, childPath, "agent.local is rejected; inner workers must be Cursor Cloud agents")
     }
+    if ((key === "mcpServers" || key === "agents") && path === "agent") {
+      push(issues, childPath, "mcpServers and subagents are not stored on the workflow agent blob")
+    }
     scanForbiddenKeys(child, childPath, issues)
   }
 }
@@ -59,6 +58,7 @@ const expectKeys = (
   for (const key of Object.keys(value)) {
     if (FORBIDDEN_KEY_NAMES.has(key)) continue
     if (key === LOCAL_KEY && (path === "" || path === "agent")) continue
+    if ((key === "mcpServers" || key === "agents") && path === "agent") continue
     if (!allowed.has(key)) {
       push(issues, `${path}.${key}`, `unknown field "${key}"`)
     }
@@ -243,123 +243,6 @@ const parseCloud = (value: unknown, path: string, issues: ValidationIssue[]): Cl
   return cloud
 }
 
-const parseMcpServer = (value: unknown, path: string, issues: ValidationIssue[]): McpServerConfig | undefined => {
-  if (!isRecord(value)) {
-    push(issues, path, "must be an object")
-    return undefined
-  }
-  if ("command" in value) {
-    expectKeys(value, path, new Set(["type", "command", "args", "env"]), issues)
-    if (value.type !== undefined && value.type !== "stdio") {
-      push(issues, `${path}.type`, 'stdio servers must use type "stdio" or omit type')
-    }
-    if ("cwd" in value) {
-      push(issues, `${path}.cwd`, "cwd is local-only; cloud stdio servers reject this field")
-    }
-    const command = requireNonEmptyString(value.command, `${path}.command`, issues)
-    let args: string[] | undefined
-    if (value.args !== undefined) {
-      if (!Array.isArray(value.args) || value.args.some((item) => !isString(item))) {
-        push(issues, `${path}.args`, "must be an array of strings")
-      } else {
-        args = value.args
-      }
-    }
-    let env: Record<string, string> | undefined
-    if (value.env !== undefined) env = requireStringRecord(value.env, `${path}.env`, issues)
-    if (!command) return undefined
-    const server: McpStdioServer = { command }
-    if (value.type === "stdio") server.type = "stdio"
-    if (args) server.args = args
-    if (env) server.env = env
-    return server
-  }
-  expectKeys(value, path, new Set(["type", "url", "headers", "auth"]), issues)
-  if (value.type !== undefined && value.type !== "http" && value.type !== "sse") {
-    push(issues, `${path}.type`, 'must be "http" or "sse"')
-  }
-  const url = requireNonEmptyString(value.url, `${path}.url`, issues)
-  let headers: Record<string, string> | undefined
-  if (value.headers !== undefined) headers = requireStringRecord(value.headers, `${path}.headers`, issues)
-  let auth: McpHttpServer["auth"] | undefined
-  if (value.auth !== undefined) {
-    if (!isRecord(value.auth)) {
-      push(issues, `${path}.auth`, "must be an object")
-    } else {
-      expectKeys(value.auth, `${path}.auth`, new Set(["CLIENT_ID", "CLIENT_SECRET", "scopes"]), issues)
-      const CLIENT_ID = requireNonEmptyString(value.auth.CLIENT_ID, `${path}.auth.CLIENT_ID`, issues)
-      let CLIENT_SECRET: string | undefined
-      if (value.auth.CLIENT_SECRET !== undefined) {
-        CLIENT_SECRET = requireNonEmptyString(value.auth.CLIENT_SECRET, `${path}.auth.CLIENT_SECRET`, issues)
-      }
-      let scopes: string[] | undefined
-      if (value.auth.scopes !== undefined) {
-        if (!Array.isArray(value.auth.scopes) || value.auth.scopes.some((item) => !isString(item))) {
-          push(issues, `${path}.auth.scopes`, "must be an array of strings")
-        } else {
-          scopes = value.auth.scopes
-        }
-      }
-      if (CLIENT_ID) {
-        auth = { CLIENT_ID }
-        if (CLIENT_SECRET) auth.CLIENT_SECRET = CLIENT_SECRET
-        if (scopes) auth.scopes = scopes
-      }
-    }
-  }
-  if (!url) return undefined
-  const server: McpHttpServer = { url }
-  if (value.type === "http" || value.type === "sse") server.type = value.type
-  if (headers) server.headers = headers
-  if (auth) server.auth = auth
-  return server
-}
-
-const parseMcpServers = (
-  value: unknown,
-  path: string,
-  issues: ValidationIssue[]
-): Record<string, McpServerConfig> | undefined => {
-  if (!isRecord(value)) {
-    push(issues, path, "must be an object")
-    return undefined
-  }
-  const servers: Record<string, McpServerConfig> = {}
-  for (const [name, raw] of Object.entries(value)) {
-    const server = parseMcpServer(raw, `${path}.${name}`, issues)
-    if (server) servers[name] = server
-  }
-  return servers
-}
-
-const parseSubagent = (value: unknown, path: string, issues: ValidationIssue[]): AgentDefinition | undefined => {
-  if (!isRecord(value)) {
-    push(issues, path, "must be an object")
-    return undefined
-  }
-  expectKeys(value, path, new Set(["description", "prompt", "model", "mcpServers"]), issues)
-  const description = requireNonEmptyString(value.description, `${path}.description`, issues)
-  const prompt = requireNonEmptyString(value.prompt, `${path}.prompt`, issues)
-  let model: AgentDefinition["model"]
-  if (value.model !== undefined) {
-    if (value.model === "inherit") model = "inherit"
-    else model = parseModelSelection(value.model, `${path}.model`, issues)
-  }
-  let mcpServers: string[] | undefined
-  if (value.mcpServers !== undefined) {
-    if (!Array.isArray(value.mcpServers) || value.mcpServers.some((item) => !isString(item))) {
-      push(issues, `${path}.mcpServers`, "must be an array of parent MCP server names")
-    } else {
-      mcpServers = value.mcpServers
-    }
-  }
-  if (!description || !prompt) return undefined
-  const agent: AgentDefinition = { description, prompt }
-  if (model) agent.model = model
-  if (mcpServers) agent.mcpServers = mcpServers
-  return agent
-}
-
 const parseMode = (value: unknown, path: string, issues: ValidationIssue[]): ConversationMode | undefined => {
   if (value !== "agent" && value !== "plan") {
     push(issues, path, 'must be "agent" or "plan"')
@@ -373,7 +256,7 @@ const parseAgent = (value: unknown, path: string, issues: ValidationIssue[]): Cu
     push(issues, path, "must be an object")
     return undefined
   }
-  expectKeys(value, path, new Set(["name", "model", "mode", "cloud", "mcpServers", "agents"]), issues)
+  expectKeys(value, path, new Set(["name", "model", "mode", "cloud"]), issues)
   if ("tools" in value || "disallowedTools" in value) {
     push(issues, path, "tools and disallowedTools are local-only and are not stored")
   }
@@ -389,26 +272,10 @@ const parseAgent = (value: unknown, path: string, issues: ValidationIssue[]): Cu
   if (value.name !== undefined) name = requireNonEmptyString(value.name, `${path}.name`, issues)
   let mode: ConversationMode | undefined
   if (value.mode !== undefined) mode = parseMode(value.mode, `${path}.mode`, issues)
-  let mcpServers: Record<string, McpServerConfig> | undefined
-  if (value.mcpServers !== undefined) mcpServers = parseMcpServers(value.mcpServers, `${path}.mcpServers`, issues)
-  let agents: Record<string, AgentDefinition> | undefined
-  if (value.agents !== undefined) {
-    if (!isRecord(value.agents)) {
-      push(issues, `${path}.agents`, "must be an object")
-    } else {
-      agents = {}
-      for (const [agentName, raw] of Object.entries(value.agents)) {
-        const parsed = parseSubagent(raw, `${path}.agents.${agentName}`, issues)
-        if (parsed) agents[agentName] = parsed
-      }
-    }
-  }
   if (!model || !cloud) return undefined
   const agent: CursorCloudCreateOptions = { model, cloud }
   if (name) agent.name = name
   if (mode) agent.mode = mode
-  if (mcpServers) agent.mcpServers = mcpServers
-  if (agents) agent.agents = agents
   return agent
 }
 

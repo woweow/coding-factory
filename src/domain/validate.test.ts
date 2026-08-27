@@ -25,6 +25,16 @@ test("accepts the implement-review fixture", () => {
   assert.equal(result.definition.steps.length, 3)
 })
 
+test("rejects agent.local", () => {
+  const body = validBody()
+  const agent = body.agent as Record<string, unknown>
+  agent.local = { cwd: "/tmp" }
+  const result = validateWorkflowDefinition(body)
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.ok(result.issues.some((issue) => issue.path === "agent.local"))
+})
+
 test("rejects apiKey anywhere in the body", () => {
   const body = validBody()
   const agent = body.agent as Record<string, unknown>
@@ -35,14 +45,23 @@ test("rejects apiKey anywhere in the body", () => {
   assert.ok(result.issues.some((issue) => issue.path === "agent.apiKey"))
 })
 
-test("rejects agent.local", () => {
-  const body = validBody()
-  const agent = body.agent as Record<string, unknown>
-  agent.local = { cwd: "/tmp" }
-  const result = validateWorkflowDefinition(body)
-  assert.equal(result.ok, false)
-  if (result.ok) return
-  assert.ok(result.issues.some((issue) => issue.path === "agent.local"))
+test("rejects agent.mcpServers and agent.agents", () => {
+  const withMcp = validBody()
+  const mcpAgent = withMcp.agent as Record<string, unknown>
+  mcpAgent.mcpServers = { linear: { type: "http", url: "https://example.com" } }
+  const mcpResult = validateWorkflowDefinition(withMcp)
+  assert.equal(mcpResult.ok, false)
+  if (!mcpResult.ok) {
+    assert.ok(mcpResult.issues.some((issue) => issue.path === "agent.mcpServers"))
+  }
+  const withSub = validBody()
+  const subAgent = withSub.agent as Record<string, unknown>
+  subAgent.agents = { helper: { description: "x", prompt: "y" } }
+  const subResult = validateWorkflowDefinition(withSub)
+  assert.equal(subResult.ok, false)
+  if (!subResult.ok) {
+    assert.ok(subResult.issues.some((issue) => issue.path === "agent.agents"))
+  }
 })
 
 test("rejects missing cloud.repos so the SDK cannot default to local", () => {

@@ -111,6 +111,32 @@ test("POST /workflows rejects apiKey and agent.local", async (t) => {
   assert.equal(errorBody.details.length, 2)
 })
 
+test("POST /workflows rejects agent.mcpServers and agent.agents", async (t) => {
+  const { baseUrl, close } = await listen()
+  t.after(close)
+  const payload = JSON.parse(fixtureJson) as {
+    agent: Record<string, unknown>
+  } & Record<string, unknown>
+  payload.agent = {
+    ...payload.agent,
+    mcpServers: { linear: { type: "http", url: "https://example.com" } },
+    agents: { helper: { description: "x", prompt: "y" } }
+  }
+  const res = await fetch(`${baseUrl}/workflows`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+  assert.equal(res.status, 400)
+  const body: unknown = await res.json()
+  assert.ok(body !== null && typeof body === "object")
+  const errorBody = body as { error: string; details: Array<{ path: string; message: string }> }
+  assert.equal(errorBody.error, "validation_error")
+  const paths = errorBody.details.map((issue) => issue.path)
+  assert.ok(paths.includes("agent.mcpServers"))
+  assert.ok(paths.includes("agent.agents"))
+})
+
 test("GET /health is ok", async (t) => {
   const { baseUrl, close } = await listen()
   t.after(close)
