@@ -37,6 +37,26 @@ test("accepts the pass-json live-check fixture", () => {
   assert.equal(result.definition.agent.cloud.autoCreatePR, false)
 })
 
+test("accepts the ping-implement-review-pr fixture", () => {
+  const path = join(dirname(fileURLToPath(import.meta.url)), "../../dev/fixtures/ping-implement-review-pr.json")
+  const result = validateWorkflowDefinition(JSON.parse(readFileSync(path, "utf8")))
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.definition.entry, "implementer")
+  assert.equal(result.definition.agent.model.id, "composer-2.5")
+  assert.deepEqual(result.definition.agent.model.params, [{ id: "fast", value: "false" }])
+  assert.equal(result.definition.agent.cloud.repos[0]?.startingRef, "main")
+  assert.equal(result.definition.agent.cloud.autoCreatePR, false)
+  assert.equal(result.definition.agent.cloud.workOnCurrentBranch, false)
+  assert.equal(result.definition.steps.length, 3)
+  assert.deepEqual(
+    result.definition.steps.map((step) => step.id),
+    ["implementer", "reviewer", "open-pr"]
+  )
+  const openPr = result.definition.steps.find((step) => step.id === "open-pr")
+  assert.deepEqual(openPr?.routes, [])
+})
+
 test("rejects agent.local", () => {
   const body = validBody()
   const agent = body.agent as Record<string, unknown>
