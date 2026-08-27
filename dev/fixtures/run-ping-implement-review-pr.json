@@ -1,0 +1,3 @@
+{
+  "prompt": "Implement a tiny ping() helper on this checkout of MAIN of https://github.com/woweow/coding-factory. Add ping.ts exporting exactly export const ping = (): string => \"pong\" and a one-line mention in README.md. Nothing else. Do not add factory runtime files (src/domain, src/http, src/factory, src/temporal, factory server). Keep the diff tiny. When committed on the agent branch, reply {\"decision\":\"READY\"}."
+}
