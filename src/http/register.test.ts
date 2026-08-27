@@ -108,6 +108,7 @@ test("POST /workflows rejects apiKey and agent.local", async (t) => {
   const paths = errorBody.details.map((issue) => issue.path)
   assert.ok(paths.includes("agent.apiKey"))
   assert.ok(paths.includes("agent.local"))
+  assert.equal(errorBody.details.length, 2)
 })
 
 test("GET /health is ok", async (t) => {
