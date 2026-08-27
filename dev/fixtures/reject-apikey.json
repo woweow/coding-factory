@@ -1,0 +1,23 @@
+{
+  "name": "must-reject",
+  "entry": "only",
+  "agent": {
+    "apiKey": "do-not-store",
+    "model": {
+      "id": "composer-2.5",
+      "params": [{ "id": "fast", "value": "false" }]
+    },
+    "local": { "cwd": "/tmp" },
+    "cloud": {
+      "repos": [
+        {
+          "url": "https://github.com/woweow/coding-factory",
+          "startingRef": "main"
+        }
+      ]
+    }
+  },
+  "steps": [
+    { "id": "only", "routes": [] }
+  ]
+}
