@@ -52,7 +52,7 @@ chmod +x dev/curl/*.sh
 ./dev/curl/get-run.sh run_YOUR_ID
 ```
 
-Optional prompt body: `dev/fixtures/run-workflow.json`. Register fixture inner model is `composer-2.5` with `fast=false`, repo `https://github.com/woweow/coding-factory`.
+Optional prompt body: `dev/fixtures/run-workflow.json`. Register fixture inner model is `composer-2.5` with `fast=false`, repo `https://github.com/woweow/coding-factory`. For a live create/resume/match check without repo edits, register `dev/fixtures/pass-json.json` and POST `dev/fixtures/run-pass-json.json`.
 
 Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 

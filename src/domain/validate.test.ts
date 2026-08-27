@@ -25,6 +25,18 @@ test("accepts the implement-review fixture", () => {
   assert.equal(result.definition.steps.length, 3)
 })
 
+test("accepts the pass-json live-check fixture", () => {
+  const path = join(dirname(fileURLToPath(import.meta.url)), "../../dev/fixtures/pass-json.json")
+  const result = validateWorkflowDefinition(JSON.parse(readFileSync(path, "utf8")))
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.definition.agent.model.id, "composer-2.5")
+  assert.deepEqual(result.definition.agent.model.params, [{ id: "fast", value: "false" }])
+  assert.equal(result.definition.steps.length, 2)
+  assert.equal(result.definition.entry, "ask")
+  assert.equal(result.definition.agent.cloud.autoCreatePR, false)
+})
+
 test("rejects agent.local", () => {
   const body = validBody()
   const agent = body.agent as Record<string, unknown>
