@@ -57,6 +57,8 @@ const expectKeys = (
   issues: ValidationIssue[]
 ): void => {
   for (const key of Object.keys(value)) {
+    if (FORBIDDEN_KEY_NAMES.has(key)) continue
+    if (key === LOCAL_KEY && (path === "" || path === "agent")) continue
     if (!allowed.has(key)) {
       push(issues, `${path}.${key}`, `unknown field "${key}"`)
     }
