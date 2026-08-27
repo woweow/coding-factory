@@ -1,109 +1,94 @@
 # coding-factory
 
-A factory for coding factories. You register a workflow (steps plus the Cursor Cloud options needed to spawn inner agents). A later slice will host that workflow on Temporal local and execute each step by sending prompts to a Cursor Cloud agent through `@cursor/sdk`.
+A factory for coding factories. Register a workflow (steps plus Cursor Cloud create options). Run it by id on Temporal local. Each step is a Cursor Cloud agent via `@cursor/sdk` — never a local agent. The cloud handle (`bc-...`) is stored on the **run** (`cursorAgentId`), not on the workflow.
 
-This slice is JSON HTTP only. There is no UI and no run-workflow API yet.
+JSON HTTP only. No UI.
 
-## What this slice does
+## APIs
 
-- `POST /workflows` (alias `POST /register-workflow`) stores a validated workflow and returns an id.
-- `GET /workflows/:id` returns that workflow.
-- Storage is local SQLite behind a `WorkflowStore` port so Postgres can replace it later. HTTP handlers never import `node:sqlite`.
-- Tables already exist for a future run: `workflows`, `workflow_runs` (including `cursor_agent_id`, `temporal_workflow_id`, `current_step_id`, `state`), and `workflow_run_steps`.
+- `POST /workflows` (alias `POST /register-workflow`) — store a validated workflow, return `wf_...`
+- `GET /workflows/:id`
+- `POST /workflows/:id/runs` (alias `POST /run-workflow` with `{ "workflowId", "prompt?" }`) — persist a `run_...` and start Temporal. Returns the run id immediately.
+- `GET /runs/:id` — current step, `cursorAgentId`, `temporalWorkflowId`, `state`, and step history
+- `GET /health`
 
-`CURSOR_API_KEY` is runtime env only. Register rejects `apiKey` and `agent.local`. Inner workers are always Cursor Cloud; `agent.cloud.repos` is required so `@cursor/sdk` cannot silently default to local.
+Register rejects `apiKey`, `agent.local`, `agent.mcpServers`, and `agent.agents`. `agent.cloud.repos` is required. `CURSOR_API_KEY` is env-only and is never written to SQLite.
 
-## Run the server against SQLite
+## Local run (SQLite + Temporal + worker)
 
-Requires Node 24 (see `.nvmrc`).
+Requires Node 24 (`.nvmrc`).
 
 ```bash
 npm i
-npm run server
+temporal server start-dev --db-filename temporal.db
 ```
 
-Defaults:
-
-- listen: `http://127.0.0.1:8787`
-- sqlite: `data/factory.db`
-
-Override with env:
+In another terminal, the factory worker (same SQLite file as the HTTP server):
 
 ```bash
-PORT=8787 SQLITE_PATH=data/factory.db npm run server
+SQLITE_PATH=data/factory.db FACTORY_AGENT_DRIVER=fake npm run worker
 ```
 
-`CURSOR_API_KEY` is not read in this slice. Do not put it in SQLite or in register JSON.
+`FACTORY_AGENT_DRIVER=fake` uses the in-process fake Cursor SDK (no cloud agents). For real cloud agents, omit that and export `CURSOR_API_KEY`:
 
-## Register a workflow with the curl scripts
+```bash
+SQLITE_PATH=data/factory.db CURSOR_API_KEY=... npm run worker
+```
 
-The server must already be running.
+HTTP server:
+
+```bash
+SQLITE_PATH=data/factory.db npm run server
+```
+
+Defaults: `http://127.0.0.1:8787`, sqlite `data/factory.db`.
+
+## Curl
 
 ```bash
 chmod +x dev/curl/*.sh
 ./dev/curl/register-workflow.sh
+./dev/curl/run-workflow.sh wf_YOUR_ID
+./dev/curl/get-run.sh run_YOUR_ID
 ```
 
-The script prints the `wf_...` id. Fetch it:
+Optional prompt body: `dev/fixtures/run-workflow.json`. Register fixture inner model is `composer-2.5` with `fast=false`, repo `https://github.com/woweow/coding-factory`.
 
-```bash
-./dev/curl/get-workflow.sh wf_YOUR_ID
-```
+Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 
-Rejection example (apiKey + local runtime):
+## How a run executes
 
-```bash
-./dev/curl/reject-apikey.sh
-```
-
-Point the scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
-
-The realistic fixture is `dev/fixtures/implement-review.json`: implement → review (PASS/FIX loop) → complete. Its inner agent model is `composer-2.5` with `fast=false`, targeting `https://github.com/woweow/coding-factory` at `main`.
+1. HTTP inserts `workflow_runs` (`state=running`, `temporalWorkflowId=factory-<runId>`) and starts Temporal on task queue `factory-queue`.
+2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Empty `routes` is terminal. Hop cap 32.
+3. First step with no `run.cursorAgentId`: `Agent.create` with the stored slim `agent` blob (`model`, `name`, `mode`, `cloud.repos` required, plus `startingRef`, `workOnCurrentBranch`, `autoCreatePR`, `openAsCursorGithubApp`, `skipReviewerRequest`, `env`, `envVars`, `metadata`). Then `send` + `wait`. Persist `agent.agentId` on the run.
+4. Later steps: `Agent.resume(run.cursorAgentId)` then `send` + `wait`.
+5. Assistant text is parsed as a JSON object of strings for `equals` routing. If parse fails and a route is `always` (or there are no equals routes), the walker proceeds. If `equals` is required and parse fails, the step fails.
+6. `CURSOR_API_KEY` is read only in the SDK driver.
 
 ## Workflow JSON
 
-TypeScript source of truth: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json`.
+TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json`.
 
-A registered document is the create-time shape:
+- `name`, optional `description`, `entry`
+- `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
+- `steps`: `id`, optional `systemPrompt` / `mode`, `routes` (edge prompt + match)
 
-- `name`, optional `description`, `entry` step id
-- `agent`: persistable `@cursor/sdk` `Agent.create` fields for a **cloud** worker (`model`, `mode`, `cloud.repos`, `cloud.startingRef` / `prUrl`, `autoCreatePR`, `workOnCurrentBranch`, `openAsCursorGithubApp`, `skipReviewerRequest`, `cloud.env`, `cloud.envVars`, `cloud.metadata`, `mcpServers`, subagents)
-- `steps`: each step has `id`, optional `systemPrompt` / per-step `mode`, and `routes` (edge prompts + match)
-
-Runtime handles are **not** stored on the definition:
-
-- `workflow_runs.cursor_agent_id` — SDK `agent.agentId` (`bc-...`) threaded across steps
-- `workflow_runs.temporal_workflow_id` — Temporal workflow id (next slice)
-- `workflow_runs.current_step_id` / `state`
-- `workflow_run_steps` — per-step prompt/output history
-
-## Next slice (not in this branch)
-
-Temporal local will start a run by id. Planned inner-agent flow, verified against current `@cursor/sdk` docs:
-
-1. First step: `Agent.create({ model, cloud: { repos } })` then `send` + `wait`. Persist `agent.agentId`.
-2. Later steps: `Agent.resume(agentId)` then `send` + `wait`. Runtime is detected from the `bc-` prefix.
-
-There is no run endpoint in this slice. Do not fake one.
+Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 
 ## Tests
 
 ```bash
-npm test
+npm run test:factory
 npm run typecheck
 ```
 
-`npm test` includes the factory register/storage tests and the existing Temporal graph PoC tests (those need Temporal test env).
+`npm test` also runs the old Temporal graph PoC tests.
 
-Factory-only:
-
-```bash
-npm run test:factory
-```
+Optional real cloud e2e is skipped unless `CURSOR_API_KEY` is set.
 
 ## Reference PoC (not the factory API)
 
-The original graph walker still lives in `graph.ts` + `temporal/`. Effect samples and graph viz are in `effect-reference/`. HITL color-picker is in `temporal-reference/`.
+`graph.ts` + `temporal/` still walk a demo graph with a fake agent. Effect samples: `effect-reference/`. HITL color-picker: `temporal-reference/`.
 
 ```bash
 temporal server start-dev --db-filename temporal.db

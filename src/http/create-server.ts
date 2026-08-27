@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import type { WorkflowRecord } from "../domain/types.ts"
+import type { WorkflowDefinition, WorkflowRecord, WorkflowRunRecord } from "../domain/types.ts"
 import { validateWorkflowDefinition } from "../domain/validate.ts"
+import { DEFAULT_RUN_PROMPT, factoryTemporalId } from "../temporal/activities.ts"
 import type { WorkflowStore } from "../storage/port.ts"
 
 const MAX_BODY_BYTES = 1024 * 1024
@@ -47,37 +48,51 @@ const workflowResponse = (record: WorkflowRecord) => ({
   updatedAt: record.updatedAt
 })
 
+const runResponse = (record: WorkflowRunRecord, steps: Awaited<ReturnType<WorkflowStore["listRunSteps"]>>) => ({
+  id: record.id,
+  workflowId: record.workflowId,
+  cursorAgentId: record.cursorAgentId,
+  temporalWorkflowId: record.temporalWorkflowId,
+  currentStepId: record.currentStepId,
+  state: record.state,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+  steps
+})
+
 const pathOnly = (url: string): string => {
   const q = url.indexOf("?")
   return q === -1 ? url : url.slice(0, q)
 }
 
-const workflowIdFromPath = (pathname: string): string | undefined => {
-  const match = pathname.match(/^\/workflows\/([^/]+)\/?$/)
-  if (!match || match[1] === undefined || match[1] === "") return undefined
-  return decodeURIComponent(match[1])
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
-const handleRegister = async (req: IncomingMessage, res: ServerResponse, store: WorkflowStore): Promise<void> => {
+const parseJsonBody = async (req: IncomingMessage, res: ServerResponse): Promise<unknown | undefined> => {
   let raw: string
   try {
     raw = await readBody(req)
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "PAYLOAD_TOO_LARGE") {
       sendError(res, 413, { error: "payload_too_large", message: "request body must be at most 1MB" })
-      return
+      return undefined
     }
     throw error
   }
-  if (raw.trim() === "") {
-    sendError(res, 400, { error: "invalid_json", message: "request body is required" })
-    return
-  }
-  let parsed: unknown
+  if (raw.trim() === "") return {}
   try {
-    parsed = JSON.parse(raw)
+    return JSON.parse(raw)
   } catch {
     sendError(res, 400, { error: "invalid_json", message: "request body is not valid JSON" })
+    return undefined
+  }
+}
+
+const handleRegister = async (req: IncomingMessage, res: ServerResponse, store: WorkflowStore): Promise<void> => {
+  const parsed = await parseJsonBody(req, res)
+  if (parsed === undefined) return
+  if (!isRecord(parsed) || Object.keys(parsed).length === 0) {
+    sendError(res, 400, { error: "invalid_json", message: "request body is required" })
     return
   }
   const result = validateWorkflowDefinition(parsed)
@@ -102,7 +117,98 @@ const handleGetWorkflow = async (res: ServerResponse, store: WorkflowStore, id: 
   sendJson(res, 200, workflowResponse(record))
 }
 
-export const createFactoryServer = (store: WorkflowStore): Server => {
+const parseRunPrompt = (
+  parsed: unknown,
+  res: ServerResponse
+): string | undefined => {
+  if (!isRecord(parsed)) {
+    sendError(res, 400, { error: "invalid_json", message: "run body must be a JSON object" })
+    return undefined
+  }
+  if ("apiKey" in parsed || "CURSOR_API_KEY" in parsed) {
+    sendError(res, 400, { error: "validation_error", message: "api keys must come from CURSOR_API_KEY at runtime" })
+    return undefined
+  }
+  if ("local" in parsed) {
+    sendError(res, 400, { error: "validation_error", message: "agent.local is rejected on run requests" })
+    return undefined
+  }
+  for (const key of Object.keys(parsed)) {
+    if (key !== "prompt" && key !== "workflowId") {
+      sendError(res, 400, { error: "validation_error", message: `unknown field "${key}"` })
+      return undefined
+    }
+  }
+  if (parsed.prompt === undefined) return DEFAULT_RUN_PROMPT
+  if (typeof parsed.prompt !== "string" || parsed.prompt.trim() === "") {
+    sendError(res, 400, { error: "validation_error", message: "prompt must be a non-empty string when set" })
+    return undefined
+  }
+  return parsed.prompt
+}
+
+const handleStartRun = async (
+  res: ServerResponse,
+  store: WorkflowStore,
+  startRun: StartRunFn | undefined,
+  workflowId: string,
+  prompt: string
+): Promise<void> => {
+  if (!startRun) {
+    sendError(res, 503, { error: "unavailable", message: "run starter is not configured" })
+    return
+  }
+  const workflow = await store.getWorkflow(workflowId)
+  if (!workflow) {
+    sendError(res, 404, { error: "not_found", message: `workflow ${workflowId} not found` })
+    return
+  }
+  const run = await store.insertRun({
+    workflowId,
+    currentStepId: workflow.definition.entry,
+    state: "pending"
+  })
+  const temporalWorkflowId = factoryTemporalId(run.id)
+  await store.updateRun(run.id, { temporalWorkflowId, state: "running" })
+  try {
+    await startRun({
+      runId: run.id,
+      temporalWorkflowId,
+      definition: workflow.definition,
+      prompt
+    })
+  } catch (error) {
+    await store.updateRun(run.id, { state: "failed" })
+    const message = error instanceof Error ? error.message : "failed to start Temporal workflow"
+    sendError(res, 503, { error: "unavailable", message })
+    return
+  }
+  const started = await store.getRun(run.id)
+  if (!started) {
+    sendError(res, 500, { error: "internal_error", message: "run vanished after start" })
+    return
+  }
+  sendJson(res, 201, runResponse(started, []))
+}
+
+const handleGetRun = async (res: ServerResponse, store: WorkflowStore, id: string): Promise<void> => {
+  const record = await store.getRun(id)
+  if (!record) {
+    sendError(res, 404, { error: "not_found", message: `run ${id} not found` })
+    return
+  }
+  const steps = await store.listRunSteps(id)
+  sendJson(res, 200, runResponse(record, steps))
+}
+
+type StartRunFn = (input: {
+  runId: string
+  temporalWorkflowId: string
+  definition: WorkflowDefinition
+  prompt: string
+}) => Promise<void>
+
+export const createFactoryServer = (store: WorkflowStore, startRun?: StartRunFn): Server => {
   return createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       try {
@@ -116,10 +222,36 @@ export const createFactoryServer = (store: WorkflowStore): Server => {
           await handleRegister(req, res, store)
           return
         }
+        const workflowRuns = pathname.match(/^\/workflows\/([^/]+)\/runs\/?$/)
+        if (method === "POST" && workflowRuns?.[1]) {
+          const parsed = await parseJsonBody(req, res)
+          if (parsed === undefined) return
+          const prompt = parseRunPrompt(parsed, res)
+          if (prompt === undefined) return
+          await handleStartRun(res, store, startRun, decodeURIComponent(workflowRuns[1]), prompt)
+          return
+        }
+        if (method === "POST" && (pathname === "/run-workflow" || pathname === "/run-workflow/")) {
+          const parsed = await parseJsonBody(req, res)
+          if (parsed === undefined) return
+          const prompt = parseRunPrompt(parsed, res)
+          if (prompt === undefined) return
+          if (!isRecord(parsed) || typeof parsed.workflowId !== "string" || parsed.workflowId.trim() === "") {
+            sendError(res, 400, { error: "validation_error", message: "workflowId is required" })
+            return
+          }
+          await handleStartRun(res, store, startRun, parsed.workflowId, prompt)
+          return
+        }
+        const runMatch = pathname.match(/^\/runs\/([^/]+)\/?$/)
+        if (method === "GET" && runMatch?.[1]) {
+          await handleGetRun(res, store, decodeURIComponent(runMatch[1]))
+          return
+        }
         if (method === "GET") {
-          const id = workflowIdFromPath(pathname)
-          if (id) {
-            await handleGetWorkflow(res, store, id)
+          const idMatch = pathname.match(/^\/workflows\/([^/]+)\/?$/)
+          if (idMatch?.[1]) {
+            await handleGetWorkflow(res, store, decodeURIComponent(idMatch[1]))
             return
           }
         }

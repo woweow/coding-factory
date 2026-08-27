@@ -10,16 +10,18 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "server": "tsx src/server.ts",
+    "worker": "tsx src/temporal/worker.ts",
     "dev": "tsx temporal/client.ts",
     "temporal": "tsx temporal/client.ts",
     "temporal:worker": "tsx temporal/worker.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts temporal/workflows.test.ts",
-    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts"
+    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts temporal/workflows.test.ts",
+    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts"
   },
   "author": "woweow",
   "license": "ISC",
   "dependencies": {
+    "@cursor/sdk": "^1.0.29",
     "@temporalio/activity": "^1.22.0",
     "@temporalio/client": "^1.22.0",
     "@temporalio/envconfig": "^1.22.0",

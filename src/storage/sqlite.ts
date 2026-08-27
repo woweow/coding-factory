@@ -113,6 +113,8 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
   ensureParentDir(sqlitePath)
   const db = new DatabaseSync(sqlitePath)
   db.exec("PRAGMA foreign_keys = ON")
+  if (sqlitePath !== ":memory:") db.exec("PRAGMA journal_mode = WAL")
+  db.exec("PRAGMA busy_timeout = 5000")
   db.exec(SCHEMA_SQL)
 
   const insertWorkflowStmt = db.prepare(
