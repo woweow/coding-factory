@@ -40,8 +40,9 @@ const tryParseObject = (text: string): Record<string, string> | undefined => {
 export const parseAgentOutput = (text: string, routes: WorkflowRoute[]): Record<string, string> => {
   const parsed = tryParseObject(text)
   if (parsed) return parsed
-  const hasAlways = routes.some((route) => route.match.kind === "always")
-  const hasEquals = routes.some((route) => route.match.kind === "equals")
+  const resolved = routes.map((route) => route.match ?? { kind: "always" as const })
+  const hasAlways = resolved.some((match) => match.kind === "always")
+  const hasEquals = resolved.some((match) => match.kind === "equals")
   if (hasAlways || !hasEquals) return {}
   throw new Error("failed to parse JSON object from assistant text")
 }

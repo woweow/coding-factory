@@ -1,6 +1,6 @@
 import { ApplicationFailure, proxyActivities } from "@temporalio/workflow"
 import type { WorkflowDefinition, WorkflowRunState, WorkflowStep } from "../domain/types.ts"
-import type { AgentInput } from "../factory/invoke-agent.ts"
+import { agentInputForStep, executeRoutes, type AgentInput } from "../factory/execute.ts"
 
 const { invokeAgent } = proxyActivities<{
   invokeAgent(input: AgentInput): Promise<Record<string, string>>
@@ -39,19 +39,13 @@ export async function factoryWorkflow(args: {
   try {
     for (let hop = 0; hop < HOP_CAP; hop++) {
       path.push(current.id)
-      const output = await invokeAgent({
-        runId: args.runId,
-        nodeId: current.id,
-        systemPrompt: current.systemPrompt ?? "",
-        edgePrompt: incomingEdge,
-        routes: current.routes,
-        mode: current.mode
-      })
-      if (current.routes.length === 0) {
+      const routes = executeRoutes(current)
+      const output = await invokeAgent(agentInputForStep(args.runId, current, incomingEdge))
+      if (routes.length === 0) {
         await setRunState({ runId: args.runId, state: "completed", currentStepId: current.id })
         return path
       }
-      const route = current.routes.find((candidate) => {
+      const route = routes.find((candidate) => {
         if (candidate.match.kind === "always") return true
         return output[candidate.match.key] === candidate.match.value
       })

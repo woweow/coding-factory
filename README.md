@@ -20,6 +20,8 @@ JSON HTTP only. No UI.
 
 `showDeleted` is the include-deleted flag. Only `true` and `false` are accepted.
 
+Register/PATCH validate, then persist the **submitted JSON object** (one `definition` column). GET/list/PATCH return that document as-is, including explicit values such as `"mode": "agent"` and omitted optionals. Execute-time defaults are applied by the Temporal walker / `invokeAgent` / `Agent.create`/`resume`, not at write time.
+
 Register/PATCH reject `apiKey`, `agent.local`, `agent.mcpServers`, and `agent.agents`. `agent.cloud.repos` is required. `CURSOR_API_KEY` is env-only and is never written to SQLite or MySQL.
 
 ## Storage
@@ -104,7 +106,7 @@ Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 ## How a run executes
 
 1. HTTP inserts `workflow_runs` (`state=running`, `temporalWorkflowId=factory-<runId>`) and starts Temporal on task queue `factory-queue`.
-2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Empty `routes` is terminal. Hop cap 32.
+2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Omitted `systemPrompt` and route `prompt` default to `""`. Omitted route `match` defaults to `{ kind: "always" }`. Omitted step `mode` stays unset so agent-level `mode: "plan"` is not clobbered. Empty `routes` (or omitted routes) is terminal. Hop cap 32.
 3. First step with no `run.cursorAgentId`: `Agent.create` with the stored slim `agent` blob (`model`, `name`, `mode`, `cloud.repos` required, plus `startingRef`, `workOnCurrentBranch`, `autoCreatePR`, `openAsCursorGithubApp`, `skipReviewerRequest`, `env`, `envVars`, `metadata`). Then `send` + `wait`. Persist `agent.agentId` on the run.
 4. Later steps: `Agent.resume(run.cursorAgentId)` then `send` + `wait`.
 5. Assistant text is parsed as a JSON object of strings for `equals` routing. If parse fails and a route is `always` (or there are no equals routes), the walker proceeds. If `equals` is required and parse fails, the step fails.
@@ -116,7 +118,7 @@ TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json
 
 - `name`, optional `description`, `entry`
 - `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
-- `steps`: `id`, optional `systemPrompt` / `mode`, `routes` (edge prompt + match)
+- `steps`: `id`, optional `systemPrompt` / `mode` / `routes` (optional edge `prompt` + `match`; executor fills omitted prompt/match)
 
 Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 

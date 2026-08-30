@@ -32,3 +32,7 @@ test("parseAgentOutput fails when equals is required and parse fails", () => {
 test("parseAgentOutput proceeds with {} for terminal empty routes", () => {
   assert.deepEqual(parseAgentOutput("done", []), {})
 })
+
+test("parseAgentOutput treats omitted match as always", () => {
+  assert.deepEqual(parseAgentOutput("not json", [{ to: "next" }]), {})
+})

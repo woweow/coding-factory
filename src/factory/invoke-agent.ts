@@ -1,17 +1,10 @@
 import { ApplicationFailure } from "@temporalio/activity"
-import type { ConversationMode, WorkflowRoute } from "../domain/types.ts"
 import { formatStepOutput, type CloudAgentDriver } from "./cloud-driver.ts"
+import type { AgentInput } from "./execute.ts"
 import { buildStepPrompt, parseAgentOutput } from "./parse-output.ts"
 import type { WorkflowStore } from "../storage/port.ts"
 
-export type AgentInput = {
-  nodeId: string
-  systemPrompt: string
-  edgePrompt: string
-  routes: WorkflowRoute[]
-  runId: string
-  mode?: ConversationMode
-}
+export type { AgentInput }
 
 export const invokeAgent = async (
   store: WorkflowStore,

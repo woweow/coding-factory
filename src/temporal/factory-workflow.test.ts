@@ -64,3 +64,57 @@ test("factoryWorkflow threads cursorAgentId across steps with a fake SDK", { tim
   assert.equal(steps.length, 3)
   assert.ok(steps.every((step) => step.cursorAgentId === stored.cursorAgentId))
 })
+
+test("factoryWorkflow runs a sparse document and does not send mode agent", { timeout: 180_000 }, async (t) => {
+  const store = createSqliteWorkflowStore(":memory:")
+  const driver = createFakeCloudDriver()
+  t.after(async () => {
+    await store.close()
+  })
+  const testEnv = await TestWorkflowEnvironment.createLocal()
+  t.after(async () => {
+    await testEnv.teardown()
+  })
+  const sparseResult = validateWorkflowDefinition({
+    name: "plan-sparse",
+    entry: "a",
+    agent: {
+      mode: "plan",
+      model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
+      cloud: { repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }] }
+    },
+    steps: [{ id: "a", routes: [{ to: "b" }] }, { id: "b" }]
+  })
+  assert.equal(sparseResult.ok, true)
+  if (!sparseResult.ok) throw new Error("sparse definition invalid")
+  const workflow = await store.insertWorkflow({ definition: sparseResult.definition })
+  const run = await store.insertRun({
+    workflowId: workflow.id,
+    currentStepId: "a",
+    state: "running",
+    temporalWorkflowId: `factory-${randomUUID()}`
+  })
+  const { client, nativeConnection } = testEnv
+  const worker = await Worker.create({
+    connection: nativeConnection,
+    taskQueue: FACTORY_TASK_QUEUE,
+    workflowsPath: fileURLToPath(new URL("./workflows.ts", import.meta.url)),
+    activities: createFactoryActivities(store, driver)
+  })
+  await worker.runUntil(async () => {
+    const path = await client.workflow.execute(factoryWorkflow, {
+      taskQueue: FACTORY_TASK_QUEUE,
+      workflowId: `factory-${run.id}`,
+      args: [{ runId: run.id, definition: sparseResult.definition, prompt: "Begin." }]
+    })
+    assert.deepEqual(path, ["a", "b"])
+  })
+  const stored = await store.getRun(run.id)
+  assert.equal(stored?.state, "completed")
+  assert.equal(driver.createdOptions?.mode, "plan")
+  assert.equal(driver.sends.length, 2)
+  for (const send of driver.sends) {
+    assert.equal(send.mode, undefined)
+    assert.notEqual(send.mode, "agent")
+  }
+})

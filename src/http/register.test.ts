@@ -143,3 +143,78 @@ test("GET /health is ok", async (t) => {
   const res = await fetch(`${baseUrl}/health`)
   assert.equal(res.status, 200)
 })
+
+const cloudAgent = () => ({
+  model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
+  cloud: { repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }] }
+})
+
+test("POST then GET keeps explicit default fields including empty strings", async (t) => {
+  const { baseUrl, close } = await listen()
+  t.after(close)
+  const document = {
+    name: "explicit-defaults",
+    entry: "only",
+    agent: { ...cloudAgent(), mode: "agent" },
+    steps: [
+      {
+        id: "only",
+        systemPrompt: "",
+        mode: "agent",
+        routes: [{ to: "only", prompt: "", match: { kind: "always" } }]
+      }
+    ]
+  }
+  const createdRes = await fetch(`${baseUrl}/workflows`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(document)
+  })
+  assert.equal(createdRes.status, 201)
+  const created: unknown = await createdRes.json()
+  assert.ok(created !== null && typeof created === "object")
+  const createdBody = created as { id: string; definition: typeof document }
+  assert.deepEqual(createdBody.definition, document)
+  assert.equal(createdBody.definition.agent.mode, "agent")
+  assert.equal(createdBody.definition.steps[0]?.systemPrompt, "")
+  assert.equal(createdBody.definition.steps[0]?.mode, "agent")
+
+  const fetchedRes = await fetch(`${baseUrl}/workflows/${createdBody.id}`)
+  assert.equal(fetchedRes.status, 200)
+  const fetched: unknown = await fetchedRes.json()
+  assert.ok(fetched !== null && typeof fetched === "object")
+  assert.deepEqual((fetched as { definition: typeof document }).definition, document)
+})
+
+test("POST then GET omits optional fields that the user omitted", async (t) => {
+  const { baseUrl, close } = await listen()
+  t.after(close)
+  const document = {
+    name: "sparse-optional",
+    entry: "only",
+    agent: cloudAgent(),
+    steps: [{ id: "only" }]
+  }
+  const createdRes = await fetch(`${baseUrl}/workflows`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(document)
+  })
+  assert.equal(createdRes.status, 201)
+  const created: unknown = await createdRes.json()
+  assert.ok(created !== null && typeof created === "object")
+  const createdBody = created as { id: string; definition: Record<string, unknown> }
+  assert.deepEqual(createdBody.definition, document)
+  const step = (createdBody.definition.steps as Array<Record<string, unknown>>)[0]
+  assert.ok(step)
+  assert.equal("systemPrompt" in step, false)
+  assert.equal("mode" in step, false)
+  assert.equal("routes" in step, false)
+  assert.equal("mode" in (createdBody.definition.agent as object), false)
+
+  const fetchedRes = await fetch(`${baseUrl}/workflows/${createdBody.id}`)
+  assert.equal(fetchedRes.status, 200)
+  const fetched: unknown = await fetchedRes.json()
+  assert.ok(fetched !== null && typeof fetched === "object")
+  assert.deepEqual((fetched as { definition: typeof document }).definition, document)
+})

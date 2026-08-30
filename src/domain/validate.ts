@@ -77,6 +77,19 @@ const requireNonEmptyString = (
   return value
 }
 
+const optionalString = (
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): string | undefined => {
+  if (value === undefined) return undefined
+  if (!isString(value)) {
+    push(issues, path, "must be a string")
+    return undefined
+  }
+  return value
+}
+
 const requireStringRecord = (
   value: unknown,
   path: string,
@@ -306,10 +319,14 @@ const parseRoute = (value: unknown, path: string, issues: ValidationIssue[]): Wo
   }
   expectKeys(value, path, new Set(["to", "prompt", "match"]), issues)
   const to = requireNonEmptyString(value.to, `${path}.to`, issues)
-  const prompt = requireNonEmptyString(value.prompt, `${path}.prompt`, issues)
-  const match = parseMatch(value.match, `${path}.match`, issues)
-  if (!to || !prompt || !match) return undefined
-  return { to, prompt, match }
+  const prompt = optionalString(value.prompt, `${path}.prompt`, issues)
+  let match: OutputMatch | undefined
+  if (value.match !== undefined) match = parseMatch(value.match, `${path}.match`, issues)
+  if (!to) return undefined
+  const route: WorkflowRoute = { to }
+  if (prompt !== undefined) route.prompt = prompt
+  if (match) route.match = match
+  return route
 }
 
 const parseStep = (value: unknown, path: string, issues: ValidationIssue[]): WorkflowStep | undefined => {
@@ -319,25 +336,27 @@ const parseStep = (value: unknown, path: string, issues: ValidationIssue[]): Wor
   }
   expectKeys(value, path, new Set(["id", "systemPrompt", "mode", "routes"]), issues)
   const id = requireNonEmptyString(value.id, `${path}.id`, issues)
-  let systemPrompt: string | undefined
-  if (value.systemPrompt !== undefined) {
-    systemPrompt = requireNonEmptyString(value.systemPrompt, `${path}.systemPrompt`, issues)
-  }
+  const systemPrompt = optionalString(value.systemPrompt, `${path}.systemPrompt`, issues)
   let mode: ConversationMode | undefined
   if (value.mode !== undefined) mode = parseMode(value.mode, `${path}.mode`, issues)
-  if (!Array.isArray(value.routes)) {
-    push(issues, `${path}.routes`, "must be an array")
-    return undefined
+  let routes: WorkflowRoute[] | undefined
+  if (value.routes !== undefined) {
+    if (!Array.isArray(value.routes)) {
+      push(issues, `${path}.routes`, "must be an array")
+    } else {
+      const parsedRoutes: WorkflowRoute[] = []
+      value.routes.forEach((item, index) => {
+        const route = parseRoute(item, `${path}.routes[${index}]`, issues)
+        if (route) parsedRoutes.push(route)
+      })
+      routes = parsedRoutes
+    }
   }
-  const routes: WorkflowRoute[] = []
-  value.routes.forEach((item, index) => {
-    const route = parseRoute(item, `${path}.routes[${index}]`, issues)
-    if (route) routes.push(route)
-  })
   if (!id) return undefined
-  const step: WorkflowStep = { id, routes }
-  if (systemPrompt) step.systemPrompt = systemPrompt
-  if (mode) step.mode = mode
+  const step: WorkflowStep = { id }
+  if (systemPrompt !== undefined) step.systemPrompt = systemPrompt
+  if (mode !== undefined) step.mode = mode
+  if (routes !== undefined) step.routes = routes
   return step
 }
 
@@ -355,7 +374,7 @@ const checkGraph = (definition: WorkflowDefinition, issues: ValidationIssue[]): 
     push(issues, "entry", `entry step "${definition.entry}" does not exist`)
   }
   definition.steps.forEach((step, index) => {
-    step.routes.forEach((route, routeIndex) => {
+    (step.routes ?? []).forEach((route, routeIndex) => {
       if (!unique.has(route.to)) {
         push(issues, `steps[${index}].routes[${routeIndex}].to`, `unknown route target "${route.to}"`)
       }
@@ -391,9 +410,9 @@ export const validateWorkflowDefinition = (input: unknown): ValidationResult => 
   if (!name || !entry || !agent || steps.length === 0) {
     return { ok: false, issues }
   }
-  const definition: WorkflowDefinition = { name, entry, agent, steps }
-  if (description) definition.description = description
-  checkGraph(definition, issues)
+  const checked: WorkflowDefinition = { name, entry, agent, steps }
+  if (description) checked.description = description
+  checkGraph(checked, issues)
   if (issues.length > 0) return { ok: false, issues }
-  return { ok: true, definition }
+  return { ok: true, definition: input as WorkflowDefinition }
 }

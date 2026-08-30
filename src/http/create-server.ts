@@ -142,7 +142,7 @@ const handleRegister = async (req: IncomingMessage, res: ServerResponse, store: 
     })
     return
   }
-  const record = await store.insertWorkflow({ definition: result.definition })
+  const record = await store.insertWorkflow({ definition: parsed as WorkflowDefinition })
   sendJson(res, 201, workflowResponse(record))
 }
 
@@ -194,7 +194,7 @@ const handlePatchWorkflow = async (
     })
     return
   }
-  const updated = await store.updateWorkflow(id, { definition: result.definition })
+  const updated = await store.updateWorkflow(id, { definition: parsed as WorkflowDefinition })
   if (!updated) {
     sendError(res, 404, { error: "not_found", message: `workflow ${id} not found` })
     return

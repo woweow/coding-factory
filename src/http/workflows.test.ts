@@ -130,6 +130,33 @@ test("PATCH /workflows/:id updates definition/name and 404s if deleted", async (
   assert.equal(afterDelete.status, 404)
 })
 
+test("PATCH keeps the submitted user document including omitted and explicit defaults", async (t) => {
+  const { baseUrl, close } = await listen()
+  t.after(close)
+  const created = await register(baseUrl)
+  const sparse = {
+    name: "patched-sparse",
+    entry: "only",
+    agent: {
+      model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
+      cloud: { repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }] }
+    },
+    steps: [{ id: "only" }]
+  }
+  const patched = await fetch(`${baseUrl}/workflows/${created.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(sparse)
+  })
+  assert.equal(patched.status, 200)
+  const body: unknown = await patched.json()
+  assert.ok(body !== null && typeof body === "object")
+  assert.deepEqual((body as { definition: typeof sparse }).definition, sparse)
+  const fetched = await fetch(`${baseUrl}/workflows/${created.id}`)
+  const fetchedBody: unknown = await fetched.json()
+  assert.deepEqual((fetchedBody as { definition: typeof sparse }).definition, sparse)
+})
+
 test("DELETE /workflows/:id is idempotent and missing ids 404", async (t) => {
   const { baseUrl, close } = await listen()
   t.after(close)

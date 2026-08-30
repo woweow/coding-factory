@@ -52,17 +52,18 @@ export type OutputMatch =
 
 export type WorkflowRoute = {
   to: string
-  prompt: string
-  match: OutputMatch
+  prompt?: string
+  match?: OutputMatch
 }
 
 export type WorkflowStep = {
   id: string
   systemPrompt?: string
   mode?: ConversationMode
-  routes: WorkflowRoute[]
+  routes?: WorkflowRoute[]
 }
 
+/** User-submitted workflow JSON. Execute-time defaults are not stored here. */
 export type WorkflowDefinition = {
   name: string
   description?: string
