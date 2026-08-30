@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { jsonToNode, nodeToJson } from "../codec/index.ts"
 import { createFactoryServer } from "./create-server.ts"
 import { createSqliteWorkflowStore } from "../storage/sqlite.ts"
 
@@ -47,12 +48,23 @@ test("POST /workflows registers a cloud workflow and GET returns it", async (t) 
   const createdBody = created as {
     id: string
     name: string
-    definition: { agent: { model: { id: string; params?: Array<{ id: string; value: string }> } } }
+    definition: {
+      agent: {
+        model: { id: string; params?: Array<{ id: string; value: string }> }
+        cloud: Record<string, unknown>
+      }
+    }
   }
   assert.match(createdBody.id, /^wf_/)
   assert.equal(createdBody.name, "implement-review")
   assert.equal(createdBody.definition.agent.model.id, "composer-2.5")
   assert.deepEqual(createdBody.definition.agent.model.params, [{ id: "fast", value: "false" }])
+  const decoded = jsonToNode(JSON.parse(fixtureJson))
+  assert.equal(decoded.ok, true)
+  if (decoded.ok) {
+    assert.deepEqual(createdBody.definition, nodeToJson(decoded.node))
+    assert.equal("workOnCurrentBranch" in createdBody.definition.agent.cloud, false)
+  }
 
   const fetchedRes = await fetch(`${baseUrl}/workflows/${createdBody.id}`)
   assert.equal(fetchedRes.status, 200)
@@ -142,4 +154,51 @@ test("GET /health is ok", async (t) => {
   t.after(close)
   const res = await fetch(`${baseUrl}/health`)
   assert.equal(res.status, 200)
+})
+
+const sparsePath = join(dirname(fileURLToPath(import.meta.url)), "../../dev/fixtures/sparse-optional.json")
+const sparseJson = readFileSync(sparsePath, "utf8")
+
+test("POST then GET of a sparse document does not accumulate default fields", async (t) => {
+  const { baseUrl, close } = await listen()
+  t.after(close)
+  const posted = JSON.parse(sparseJson) as Record<string, unknown>
+  const createdRes = await fetch(`${baseUrl}/workflows`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: sparseJson
+  })
+  assert.equal(createdRes.status, 201)
+  const created: unknown = await createdRes.json()
+  assert.ok(created !== null && typeof created === "object")
+  const createdBody = created as { id: string; definition: Record<string, unknown> }
+  assert.deepEqual(createdBody.definition, posted)
+
+  const fetchedRes = await fetch(`${baseUrl}/workflows/${createdBody.id}`)
+  assert.equal(fetchedRes.status, 200)
+  const fetched: unknown = await fetchedRes.json()
+  assert.ok(fetched !== null && typeof fetched === "object")
+  assert.deepEqual((fetched as { definition: unknown }).definition, posted)
+
+  const inflated = JSON.parse(sparseJson) as {
+    agent: { mode?: string; cloud: Record<string, unknown> }
+    steps: Array<Record<string, unknown>>
+  }
+  inflated.agent.mode = "agent"
+  inflated.agent.cloud.workOnCurrentBranch = false
+  inflated.agent.cloud.autoCreatePR = false
+  inflated.agent.cloud.skipReviewerRequest = false
+  inflated.agent.cloud.env = { type: "cloud" }
+  const patchedRes = await fetch(`${baseUrl}/workflows/${createdBody.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(inflated)
+  })
+  assert.equal(patchedRes.status, 200)
+  const patched: unknown = await patchedRes.json()
+  assert.ok(patched !== null && typeof patched === "object")
+  assert.deepEqual((patched as { definition: unknown }).definition, posted)
+  const again = await fetch(`${baseUrl}/workflows/${createdBody.id}`)
+  const againBody: unknown = await again.json()
+  assert.deepEqual((againBody as { definition: unknown }).definition, posted)
 })

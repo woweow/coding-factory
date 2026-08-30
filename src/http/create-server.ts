@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import type { WorkflowDefinition, WorkflowRecord, WorkflowRunRecord } from "../domain/types.ts"
+import { jsonToNode, jsonToNodeOrThrow, nodeToJson } from "../codec/index.ts"
+import type { WorkflowDefinition, WorkflowGraph, WorkflowRecord, WorkflowRunRecord } from "../domain/types.ts"
 import { validateWorkflowDefinition } from "../domain/validate.ts"
 import { DEFAULT_RUN_PROMPT, factoryTemporalId } from "../temporal/activities.ts"
 import type { WorkflowStore } from "../storage/port.ts"
@@ -45,10 +46,15 @@ const readBody = async (req: IncomingMessage): Promise<string> => {
   return Buffer.concat(chunks).toString("utf8")
 }
 
+const canonicalizeStoredDefinition = (definition: WorkflowDefinition): WorkflowDefinition => {
+  const result = jsonToNode(definition)
+  return result.ok ? nodeToJson(result.node) : definition
+}
+
 const workflowResponse = (record: WorkflowRecord) => ({
   id: record.id,
   name: record.name,
-  definition: record.definition,
+  definition: canonicalizeStoredDefinition(record.definition),
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
   deletedAt: record.deletedAt
@@ -257,9 +263,10 @@ const handleStartRun = async (
     sendError(res, 404, { error: "not_found", message: `workflow ${workflowId} not found` })
     return
   }
+  const graph = jsonToNodeOrThrow(workflow.definition)
   const run = await store.insertRun({
     workflowId,
-    currentStepId: workflow.definition.entry,
+    currentStepId: graph.entry,
     state: "pending"
   })
   const temporalWorkflowId = factoryTemporalId(run.id)
@@ -268,7 +275,7 @@ const handleStartRun = async (
     await startRun({
       runId: run.id,
       temporalWorkflowId,
-      definition: workflow.definition,
+      graph,
       prompt
     })
   } catch (error) {
@@ -315,7 +322,7 @@ const handleGetRun = async (res: ServerResponse, store: WorkflowStore, id: strin
 type StartRunFn = (input: {
   runId: string
   temporalWorkflowId: string
-  definition: WorkflowDefinition
+  graph: WorkflowGraph
   prompt: string
 }) => Promise<void>
 

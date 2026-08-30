@@ -104,19 +104,21 @@ Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 ## How a run executes
 
 1. HTTP inserts `workflow_runs` (`state=running`, `temporalWorkflowId=factory-<runId>`) and starts Temporal on task queue `factory-queue`.
-2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Empty `routes` is terminal. Hop cap 32.
-3. First step with no `run.cursorAgentId`: `Agent.create` with the stored slim `agent` blob (`model`, `name`, `mode`, `cloud.repos` required, plus `startingRef`, `workOnCurrentBranch`, `autoCreatePR`, `openAsCursorGithubApp`, `skipReviewerRequest`, `env`, `envVars`, `metadata`). Then `send` + `wait`. Persist `agent.agentId` on the run.
+2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Empty `routes` is terminal. Hop cap 32. HTTP runs `jsonToNode` on the stored document before Temporal so the walker sees filled defaults, not the slim JSON.
+3. First step with no `run.cursorAgentId`: `Agent.create` with the runtime agent blob from `jsonToNode` (`model`, `name`, `mode`, `cloud.repos` required, plus `startingRef`, `workOnCurrentBranch`, `autoCreatePR`, `openAsCursorGithubApp`, `skipReviewerRequest`, `env`, `envVars`, `metadata`). Then `send` + `wait`. Persist `agent.agentId` on the run.
 4. Later steps: `Agent.resume(run.cursorAgentId)` then `send` + `wait`.
 5. Assistant text is parsed as a JSON object of strings for `equals` routing. If parse fails and a route is `always` (or there are no equals routes), the walker proceeds. If `equals` is required and parse fails, the step fails.
 6. `CURSOR_API_KEY` is read only in the SDK driver.
 
 ## Workflow JSON
 
-TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json`.
+TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json`. Codec: `src/codec` (`jsonToNode` / `nodeToJson`).
 
 - `name`, optional `description`, `entry`
 - `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
-- `steps`: `id`, optional `systemPrompt` / `mode`, `routes` (edge prompt + match)
+- `steps`: `id`, optional `systemPrompt` / `mode` / `routes` (edge `to` plus optional prompt + match)
+
+POST/PATCH store **canonical JSON**: fields that equal codec defaults are omitted. GET returns that same document, so roundtrips cannot accumulate defaults. Runtime fills defaults via `jsonToNode` before Temporal.
 
 Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 

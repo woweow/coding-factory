@@ -23,6 +23,8 @@ test("accepts the implement-review fixture", () => {
   assert.deepEqual(result.definition.agent.model.params, [{ id: "fast", value: "false" }])
   assert.equal(result.definition.agent.cloud.repos[0]?.url, "https://github.com/woweow/coding-factory")
   assert.equal(result.definition.steps.length, 3)
+  assert.equal(result.definition.agent.cloud.autoCreatePR, true)
+  assert.equal("workOnCurrentBranch" in result.definition.agent.cloud, false)
 })
 
 test("accepts the pass-json live-check fixture", () => {
@@ -34,7 +36,8 @@ test("accepts the pass-json live-check fixture", () => {
   assert.deepEqual(result.definition.agent.model.params, [{ id: "fast", value: "false" }])
   assert.equal(result.definition.steps.length, 2)
   assert.equal(result.definition.entry, "ask")
-  assert.equal(result.definition.agent.cloud.autoCreatePR, false)
+  assert.equal("autoCreatePR" in result.definition.agent.cloud, false)
+  assert.equal(result.definition.agent.cloud.skipReviewerRequest, true)
 })
 
 test("accepts the ping-implement-review-pr fixture", () => {
@@ -46,15 +49,26 @@ test("accepts the ping-implement-review-pr fixture", () => {
   assert.equal(result.definition.agent.model.id, "composer-2.5")
   assert.deepEqual(result.definition.agent.model.params, [{ id: "fast", value: "false" }])
   assert.equal(result.definition.agent.cloud.repos[0]?.startingRef, "main")
-  assert.equal(result.definition.agent.cloud.autoCreatePR, false)
-  assert.equal(result.definition.agent.cloud.workOnCurrentBranch, false)
+  assert.equal("autoCreatePR" in result.definition.agent.cloud, false)
+  assert.equal("workOnCurrentBranch" in result.definition.agent.cloud, false)
   assert.equal(result.definition.steps.length, 3)
   assert.deepEqual(
     result.definition.steps.map((step) => step.id),
     ["implementer", "reviewer", "open-pr"]
   )
   const openPr = result.definition.steps.find((step) => step.id === "open-pr")
-  assert.deepEqual(openPr?.routes, [])
+  assert.equal(openPr?.routes, undefined)
+})
+
+test("accepts a sparse document that omits optional fields", () => {
+  const path = join(dirname(fileURLToPath(import.meta.url)), "../../dev/fixtures/sparse-optional.json")
+  const result = validateWorkflowDefinition(JSON.parse(readFileSync(path, "utf8")))
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.definition.name, "sparse-optional")
+  assert.equal("mode" in result.definition.agent, false)
+  assert.equal("autoCreatePR" in result.definition.agent.cloud, false)
+  assert.equal(result.definition.steps[1]?.routes, undefined)
 })
 
 test("rejects agent.local", () => {

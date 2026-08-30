@@ -1,0 +1,43 @@
+---
+description: All JSON ↔ Node conversion goes through the workflow codec
+globs:
+  - src/**/*.ts
+  - templates/**/*.json
+  - dev/fixtures/**/*.json
+alwaysApply: true
+---
+
+# Workflow JSON ↔ Node codec
+
+All conversion between user/API workflow JSON and the in-memory runtime graph **must** go through `src/codec`.
+
+## Public API
+
+- `jsonToNode(json)` — validate and decode a document into the runtime graph (defaults applied)
+- `nodeToJson(node)` — encode a runtime graph as canonical JSON (defaults omitted, stable key order)
+
+Do not add a second converter. `validateWorkflowDefinition` is a thin wrapper over this pair.
+
+## Defaults
+
+Defaults live in `WORKFLOW_DEFAULTS` (`src/codec/defaults.ts`) only.
+
+- `jsonToNode` applies the table
+- `nodeToJson` omits a field when its value is exactly a default
+- Never apply these defaults outside the codec (`??`, `||`, SDK fill-ins, HTTP munging, UI helpers)
+
+`openAsCursorGithubApp` has no factory default (the Cursor SDK chooses from the key type). Do not invent one.
+
+## Persistence and HTTP
+
+Store **canonical JSON** (`nodeToJson` output). GET/PATCH/list must return that shape so posting a document and reading it back cannot accumulate default fields.
+
+Runtime (Temporal, `Agent.create` / `Agent.resume`) uses `jsonToNode` **before** the walker and SDK calls. Do not pass the stored document straight into Temporal or the SDK.
+
+## REST / RPC / UI
+
+REST, RPC, and any future editor **must not** reimplement JSON ↔ Node conversion or default fill/strip. Import the codec.
+
+## CursorCloudCreateOptions
+
+Keep the persistable agent blob slim: no `apiKey`, `local`, `mcpServers`, or subagents.

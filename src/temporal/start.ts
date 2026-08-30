@@ -1,6 +1,6 @@
 import { Client, Connection } from "@temporalio/client"
 import { loadClientConnectConfig } from "@temporalio/envconfig"
-import type { WorkflowDefinition } from "../domain/types.ts"
+import type { WorkflowGraph } from "../domain/types.ts"
 import { FACTORY_TASK_QUEUE } from "./shared.ts"
 import { factoryWorkflow } from "./workflows.ts"
 
@@ -20,13 +20,13 @@ const getClient = async (): Promise<Client> => {
 export const startFactoryRun = async (input: {
   runId: string
   temporalWorkflowId: string
-  definition: WorkflowDefinition
+  graph: WorkflowGraph
   prompt: string
 }): Promise<void> => {
   const client = await getClient()
   await client.workflow.start(factoryWorkflow, {
     taskQueue: FACTORY_TASK_QUEUE,
     workflowId: input.temporalWorkflowId,
-    args: [{ runId: input.runId, definition: input.definition, prompt: input.prompt }]
+    args: [{ runId: input.runId, graph: input.graph, prompt: input.prompt }]
   })
 }

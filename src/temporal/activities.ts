@@ -1,4 +1,4 @@
-import type { WorkflowDefinition, WorkflowRunState } from "../domain/types.ts"
+import type { WorkflowGraph, WorkflowRunState } from "../domain/types.ts"
 import type { CloudAgentDriver } from "../factory/cloud-driver.ts"
 import { invokeAgent as runCloudAgent, type AgentInput } from "../factory/invoke-agent.ts"
 import type { WorkflowStore } from "../storage/port.ts"
@@ -26,7 +26,7 @@ export type FactoryActivities = ReturnType<typeof createFactoryActivities>
 
 export type FactoryWorkflowArgs = {
   runId: string
-  definition: WorkflowDefinition
+  graph: WorkflowGraph
   prompt: string
 }
 

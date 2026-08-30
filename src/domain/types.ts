@@ -50,25 +50,69 @@ export type OutputMatch =
   | { kind: "always" }
   | { kind: "equals"; key: string; value: string }
 
-export type WorkflowRoute = {
+/** Canonical JSON edge. prompt/match may be omitted when they equal codec defaults. */
+export type WorkflowRouteJson = {
   to: string
-  prompt: string
-  match: OutputMatch
+  prompt?: string
+  match?: OutputMatch
 }
 
+/** Canonical JSON step. routes may be omitted when empty. */
 export type WorkflowStep = {
   id: string
   systemPrompt?: string
   mode?: ConversationMode
-  routes: WorkflowRoute[]
+  routes?: WorkflowRouteJson[]
 }
 
+/** Canonical JSON document stored and returned by HTTP. Defaults omitted. */
 export type WorkflowDefinition = {
   name: string
   description?: string
   entry: string
   agent: CursorCloudCreateOptions
   steps: WorkflowStep[]
+}
+
+/** Runtime edge after jsonToNode. Every field is populated from the defaults table. */
+export type WorkflowRoute = {
+  to: string
+  prompt: string
+  match: OutputMatch
+}
+
+export type RuntimeCloudAgentOptions = {
+  env: CloudEnv
+  repos: CloudRepo[]
+  workOnCurrentBranch: boolean
+  autoCreatePR: boolean
+  openAsCursorGithubApp?: boolean
+  skipReviewerRequest: boolean
+  envVars?: Record<string, string>
+  metadata?: Record<string, string>
+}
+
+export type RuntimeCursorCloudCreateOptions = {
+  name?: string
+  model: ModelSelection
+  mode: ConversationMode
+  cloud: RuntimeCloudAgentOptions
+}
+
+/** Runtime node graph after jsonToNode. Temporal walks `nodes`, never the JSON document. */
+export type WorkflowNode = {
+  id: string
+  systemPrompt: string
+  mode: ConversationMode
+  routes: WorkflowRoute[]
+}
+
+export type WorkflowGraph = {
+  name: string
+  description: string
+  entry: string
+  agent: RuntimeCursorCloudCreateOptions
+  nodes: WorkflowNode[]
 }
 
 export type WorkflowRecord = {

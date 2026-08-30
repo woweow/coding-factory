@@ -1,4 +1,5 @@
 import { ApplicationFailure } from "@temporalio/activity"
+import { jsonToNodeOrThrow } from "../codec/index.ts"
 import type { ConversationMode, WorkflowRoute } from "../domain/types.ts"
 import { formatStepOutput, type CloudAgentDriver } from "./cloud-driver.ts"
 import { buildStepPrompt, parseAgentOutput } from "./parse-output.ts"
@@ -22,12 +23,13 @@ export const invokeAgent = async (
   if (!run) throw new Error(`workflow run not found: ${input.runId}`)
   const workflow = await store.getWorkflow(run.workflowId)
   if (!workflow) throw new Error(`workflow not found: ${run.workflowId}`)
+  const graph = jsonToNodeOrThrow(workflow.definition)
   const prompt = buildStepPrompt(input.systemPrompt, input.edgePrompt)
   const startedAt = new Date().toISOString()
   const existingAgentId = run.cursorAgentId
   const handle = existingAgentId
-    ? await driver.resume(existingAgentId, workflow.definition.agent)
-    : await driver.create(workflow.definition.agent)
+    ? await driver.resume(existingAgentId, graph.agent)
+    : await driver.create(graph.agent)
   try {
     const cursorAgentId = handle.agentId
     await store.updateRun(input.runId, {

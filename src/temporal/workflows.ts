@@ -1,5 +1,5 @@
 import { ApplicationFailure, proxyActivities } from "@temporalio/workflow"
-import type { WorkflowDefinition, WorkflowRunState, WorkflowStep } from "../domain/types.ts"
+import type { WorkflowGraph, WorkflowRunState, WorkflowNode } from "../domain/types.ts"
 import type { AgentInput } from "../factory/invoke-agent.ts"
 
 const { invokeAgent } = proxyActivities<{
@@ -22,19 +22,19 @@ const { setRunState } = proxyActivities<{
 
 const HOP_CAP = 32
 
-const stepById = (definition: WorkflowDefinition, id: string): WorkflowStep => {
-  const step = definition.steps.find((item) => item.id === id)
-  if (!step) throw ApplicationFailure.nonRetryable(`unknown step ${id}`)
-  return step
+const nodeById = (graph: WorkflowGraph, id: string): WorkflowNode => {
+  const node = graph.nodes.find((item) => item.id === id)
+  if (!node) throw ApplicationFailure.nonRetryable(`unknown step ${id}`)
+  return node
 }
 
 export async function factoryWorkflow(args: {
   runId: string
-  definition: WorkflowDefinition
+  graph: WorkflowGraph
   prompt: string
 }): Promise<string[]> {
   const path: string[] = []
-  let current = stepById(args.definition, args.definition.entry)
+  let current = nodeById(args.graph, args.graph.entry)
   let incomingEdge = args.prompt
   try {
     for (let hop = 0; hop < HOP_CAP; hop++) {
@@ -42,7 +42,7 @@ export async function factoryWorkflow(args: {
       const output = await invokeAgent({
         runId: args.runId,
         nodeId: current.id,
-        systemPrompt: current.systemPrompt ?? "",
+        systemPrompt: current.systemPrompt,
         edgePrompt: incomingEdge,
         routes: current.routes,
         mode: current.mode
@@ -60,7 +60,7 @@ export async function factoryWorkflow(args: {
           `no route from ${current.id} for ${JSON.stringify(output)}`
         )
       }
-      current = stepById(args.definition, route.to)
+      current = nodeById(args.graph, route.to)
       incomingEdge = route.prompt
     }
     throw ApplicationFailure.nonRetryable("graph hop cap")

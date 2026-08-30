@@ -19,7 +19,8 @@ test("seed inserts pass-json and ping-implement-review-pr when the table is empt
   assert.deepEqual(pass?.definition.agent.model.params, [{ id: "fast", value: "false" }])
   assert.equal(pass?.definition.agent.cloud.repos[0]?.url, "https://github.com/woweow/coding-factory")
   assert.equal(pass?.definition.agent.cloud.repos[0]?.startingRef, "main")
-  assert.equal(ping?.definition.agent.cloud.autoCreatePR, false)
+  assert.equal(ping?.definition.agent.cloud.skipReviewerRequest, true)
+  assert.equal("autoCreatePR" in (ping?.definition.agent.cloud ?? {}), false)
   assert.equal(ping?.definition.entry, "implementer")
 })
 

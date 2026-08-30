@@ -1,0 +1,17 @@
+{
+  "name": "sparse-optional",
+  "entry": "start",
+  "agent": {
+    "model": { "id": "composer-2.5" },
+    "cloud": {
+      "repos": [{ "url": "https://github.com/woweow/coding-factory" }]
+    }
+  },
+  "steps": [
+    {
+      "id": "start",
+      "routes": [{ "to": "done" }]
+    },
+    { "id": "done" }
+  ]
+}

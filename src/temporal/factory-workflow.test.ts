@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
 import { TestWorkflowEnvironment } from "@temporalio/testing"
 import { Worker } from "@temporalio/worker"
-import type { WorkflowDefinition } from "../domain/types.ts"
+import type { WorkflowDefinition, WorkflowGraph } from "../domain/types.ts"
+import { jsonToNodeOrThrow } from "../codec/index.ts"
 import { validateWorkflowDefinition } from "../domain/validate.ts"
 import { createFakeCloudDriver } from "../factory/fake-driver.ts"
 import { createSqliteWorkflowStore } from "../storage/sqlite.ts"
@@ -22,6 +23,8 @@ const definition = (): WorkflowDefinition => {
   if (!result.ok) throw new Error("fixture invalid")
   return result.definition
 }
+
+const graph = (): WorkflowGraph => jsonToNodeOrThrow(definition())
 
 test("factoryWorkflow threads cursorAgentId across steps with a fake SDK", { timeout: 180_000 }, async (t) => {
   const store = createSqliteWorkflowStore(":memory:")
@@ -51,7 +54,7 @@ test("factoryWorkflow threads cursorAgentId across steps with a fake SDK", { tim
     const path = await client.workflow.execute(factoryWorkflow, {
       taskQueue: FACTORY_TASK_QUEUE,
       workflowId: `factory-${run.id}`,
-      args: [{ runId: run.id, definition: definition(), prompt: "Begin." }]
+      args: [{ runId: run.id, graph: graph(), prompt: "Begin." }]
     })
     assert.deepEqual(path, ["implementer", "reviewer", "complete"])
   })
