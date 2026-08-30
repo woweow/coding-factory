@@ -13,6 +13,7 @@ export const firstEqualsOutput = (routes: Route[]): Record<string, string> => {
   return { [first.match.key]: first.match.value }
 }
 
+/** Reference PoC walker only. Factory cloud invoke lives in src/factory/invoke-agent.ts. */
 export const invokeAgent = (input: AgentInput): Record<string, string> => {
   console.log(`  entering ${input.nodeId}`)
   console.log(`  system prompt: ${input.systemPrompt} ... edge prompt: ${input.edgePrompt}`)

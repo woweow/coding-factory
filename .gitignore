@@ -1,5 +1,6 @@
 node_modules/
 .DS_Store
+data/
 temporal.db
 temporal.db-shm
 temporal.db-wal

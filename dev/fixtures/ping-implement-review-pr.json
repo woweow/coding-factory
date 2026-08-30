@@ -1,0 +1,66 @@
+{
+  "name": "ping-implement-review-pr",
+  "description": "Tiny ping() on main: implementer -> reviewer (/bugbot) -> open-pr. Inner agent starts on main of this repo. Reject factory src/ runtime on main.",
+  "entry": "implementer",
+  "agent": {
+    "name": "coding-factory ping-implement-review-pr",
+    "model": {
+      "id": "composer-2.5",
+      "params": [{ "id": "fast", "value": "false" }]
+    },
+    "mode": "agent",
+    "cloud": {
+      "env": { "type": "cloud" },
+      "repos": [
+        {
+          "url": "https://github.com/woweow/coding-factory",
+          "startingRef": "main"
+        }
+      ],
+      "workOnCurrentBranch": false,
+      "autoCreatePR": false,
+      "skipReviewerRequest": true,
+      "metadata": {
+        "factory": "coding-factory",
+        "workflow": "ping-implement-review-pr"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "implementer",
+      "systemPrompt": "You are the implementer on a checkout of MAIN of https://github.com/woweow/coding-factory. Main has graph.ts, agent.ts, index.ts, and temporal/; it does NOT have the factory server (no src/domain, src/http, src/factory, src/temporal). Add ping.ts exporting exactly: export const ping = (): string => \"pong\" and a one-line mention in README.md. Nothing else. Keep the diff tiny. Do not add factory runtime files. Do not merge to main. When the change is committed on the agent branch, reply with JSON {\"decision\":\"READY\"}. If sent back from review, fix the issues then reply {\"decision\":\"READY\"} again.",
+      "mode": "agent",
+      "routes": [
+        {
+          "to": "reviewer",
+          "prompt": "Run /bugbot (Cursor bugbot) on the current diff for this ping() helper. If bugbot finds a real issue, reply with {\"decision\":\"FIX\"} plus a short list of findings. If clean, reply with {\"decision\":\"PASS\"}. Do not implement new features.",
+          "match": { "kind": "equals", "key": "decision", "value": "READY" }
+        }
+      ]
+    },
+    {
+      "id": "reviewer",
+      "systemPrompt": "You are the reviewer. Run /bugbot (Cursor bugbot) on the current diff. If it finds a real issue, reply {\"decision\":\"FIX\"} plus a short list. If clean, reply {\"decision\":\"PASS\"}. Do not add factory runtime files. Do not implement the feature yourself.",
+      "mode": "agent",
+      "routes": [
+        {
+          "to": "implementer",
+          "prompt": "Fix the bugbot findings. Keep the diff tiny: ping.ts exporting export const ping = (): string => \"pong\" and a one-line README.md mention only. Do not add factory src/ runtime. When the change is committed, reply {\"decision\":\"READY\"}.",
+          "match": { "kind": "equals", "key": "decision", "value": "FIX" }
+        },
+        {
+          "to": "open-pr",
+          "prompt": "Open a pull request targeting main for this ping feature only. Title and body must say it is a tiny ping() helper. Do not include factory runtime files (src/domain, src/http, src/factory, src/temporal). Then reply {\"decision\":\"DONE\"}.",
+          "match": { "kind": "equals", "key": "decision", "value": "PASS" }
+        }
+      ]
+    },
+    {
+      "id": "open-pr",
+      "systemPrompt": "Open a pull request targeting main with only the ping feature. Title and body should say it is a tiny ping() helper. Then reply with JSON {\"decision\":\"DONE\"}. Do not add factory runtime files.",
+      "mode": "agent",
+      "routes": []
+    }
+  ]
+}

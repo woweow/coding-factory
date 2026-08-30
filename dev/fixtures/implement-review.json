@@ -1,0 +1,64 @@
+{
+  "name": "implement-review",
+  "description": "Implement a change, then review until PASS. Inner worker is a Cursor Cloud agent on this repo.",
+  "entry": "implementer",
+  "agent": {
+    "name": "coding-factory implement-review",
+    "model": {
+      "id": "composer-2.5",
+      "params": [{ "id": "fast", "value": "false" }]
+    },
+    "mode": "agent",
+    "cloud": {
+      "env": { "type": "cloud" },
+      "repos": [
+        {
+          "url": "https://github.com/woweow/coding-factory",
+          "startingRef": "main"
+        }
+      ],
+      "workOnCurrentBranch": false,
+      "autoCreatePR": true,
+      "skipReviewerRequest": false,
+      "metadata": {
+        "factory": "coding-factory",
+        "workflow": "implement-review"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "implementer",
+      "systemPrompt": "You implement the requested code change in this repository. Keep the diff focused.",
+      "mode": "agent",
+      "routes": [
+        {
+          "to": "reviewer",
+          "prompt": "The implementation is ready. Review it. Reply with decision=CONTINUE when you have produced a diff to review.",
+          "match": { "kind": "always" }
+        }
+      ]
+    },
+    {
+      "id": "reviewer",
+      "systemPrompt": "You review the latest implementation. Reply with a decision of PASS or FIX and a short rationale.",
+      "routes": [
+        {
+          "to": "complete",
+          "prompt": "Review passed. Summarize what shipped and stop.",
+          "match": { "kind": "equals", "key": "decision", "value": "PASS" }
+        },
+        {
+          "to": "implementer",
+          "prompt": "Review found issues. Fix them, then return for another review.",
+          "match": { "kind": "equals", "key": "decision", "value": "FIX" }
+        }
+      ]
+    },
+    {
+      "id": "complete",
+      "systemPrompt": "The feature is complete. Do not start new work.",
+      "routes": []
+    }
+  ]
+}
