@@ -110,8 +110,7 @@ const spawnLogged = (command: string, args: string[], extraEnv: Record<string, s
   const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...extraEnv, FACTORY_ROOT: root },
-    stdio: "inherit",
-    detached: true
+    stdio: "inherit"
   })
   children.push(child)
   persistLock()
