@@ -154,3 +154,81 @@ test("rejects duplicate step ids", () => {
   if (result.ok) return
   assert.ok(result.issues.some((issue) => issue.message.includes("duplicate step id")))
 })
+
+const sparseCloudAgent = () => ({
+  model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
+  cloud: { repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }] }
+})
+
+test("accepts sparse optionals and returns the same user document", () => {
+  const body = {
+    name: "sparse-optional",
+    entry: "only",
+    agent: sparseCloudAgent(),
+    steps: [{ id: "only" }]
+  }
+  const result = validateWorkflowDefinition(body)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.definition, body)
+  const step = result.definition.steps[0]
+  assert.ok(step)
+  assert.equal("systemPrompt" in step, false)
+  assert.equal("mode" in step, false)
+  assert.equal("routes" in step, false)
+  assert.equal("mode" in result.definition.agent, false)
+})
+
+test("keeps explicit empty strings and default fields on the user document", () => {
+  const body = {
+    name: "explicit-defaults",
+    entry: "only",
+    agent: { ...sparseCloudAgent(), mode: "agent" },
+    steps: [
+      {
+        id: "only",
+        systemPrompt: "",
+        mode: "agent",
+        routes: [{ to: "only", prompt: "", match: { kind: "always" } }]
+      }
+    ]
+  }
+  const result = validateWorkflowDefinition(body)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.definition, body)
+  const step = result.definition.steps[0]
+  assert.equal(step?.systemPrompt, "")
+  assert.equal(step?.mode, "agent")
+  assert.equal(step?.routes?.[0]?.prompt, "")
+  assert.deepEqual(step?.routes?.[0]?.match, { kind: "always" })
+  assert.equal(result.definition.agent.mode, "agent")
+})
+
+test("accepts a route that omits prompt and match", () => {
+  const body = {
+    name: "sparse-route",
+    entry: "a",
+    agent: sparseCloudAgent(),
+    steps: [{ id: "a", routes: [{ to: "b" }] }, { id: "b" }]
+  }
+  const result = validateWorkflowDefinition(body)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.definition.steps[0]?.routes, [{ to: "b" }])
+})
+
+test("still rejects unknown fields on sparse documents", () => {
+  const body = {
+    name: "sparse-unknown",
+    entry: "only",
+    extra: true,
+    agent: sparseCloudAgent(),
+    steps: [{ id: "only", surprise: 1 }]
+  }
+  const result = validateWorkflowDefinition(body)
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.ok(result.issues.some((issue) => issue.path === ".extra"))
+  assert.ok(result.issues.some((issue) => issue.path === "steps[0].surprise"))
+})

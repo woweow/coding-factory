@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { WorkflowDefinition } from "../domain/types.ts"
 import { validateWorkflowDefinition } from "../domain/validate.ts"
 import type { WorkflowStore } from "./port.ts"
 
@@ -27,7 +28,7 @@ export const seedWorkflowsIfEmpty = async (store: WorkflowStore): Promise<number
       const details = result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
       throw new Error(`workflow template ${file} is invalid: ${details}`)
     }
-    await store.insertWorkflow({ definition: result.definition })
+    await store.insertWorkflow({ definition: parsed as WorkflowDefinition })
     seeded += 1
   }
   return seeded

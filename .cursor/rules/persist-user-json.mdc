@@ -1,0 +1,16 @@
+---
+description: CRUD persists user JSON; executor applies defaults. No codec, no dual-column storage.
+alwaysApply: true
+---
+
+# Persist user JSON; defaults at execute time
+
+- After validation succeeds, POST / PATCH / seed store the submitted JSON object as-is in the single `definition` column.
+- GET, list, and PATCH responses return that stored document so the UI can show and edit what was typed, including explicit values such as `"mode": "agent"` and omitted optionals.
+- Do not store a reconstructed object with filled defaults. Do not store `nodeToJson` output. Do not add a second rendered or canonical JSON column.
+- Do not add a bidirectional JSON ↔ Node codec.
+- Defaults belong in the executor (Temporal walker, `invokeAgent`, `Agent.create` / `Agent.resume`):
+  - omitted `systemPrompt` / route `prompt` → `""`
+  - omitted route `match` → `{ kind: "always" }`
+  - omitted step `mode` stays unset (do not fill `"agent"`; that would clobber agent-level `mode: "plan"`)
+- The validator accepts sparse user JSON for those execute-time defaults. Still reject unknown fields, `apiKey`, `local`, `mcpServers`, and subagents.

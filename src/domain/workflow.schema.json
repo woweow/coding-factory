@@ -117,20 +117,20 @@
     "route": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["to", "prompt", "match"],
+      "required": ["to"],
       "properties": {
         "to": { "type": "string", "minLength": 1 },
-        "prompt": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string" },
         "match": { "$ref": "#/$defs/outputMatch" }
       }
     },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "routes"],
+      "required": ["id"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "systemPrompt": { "type": "string", "minLength": 1 },
+        "systemPrompt": { "type": "string" },
         "mode": { "enum": ["agent", "plan"] },
         "routes": {
           "type": "array",
