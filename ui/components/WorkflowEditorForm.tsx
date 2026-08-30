@@ -9,9 +9,15 @@ type WorkflowEditorFormProps = {
   mode: "create" | "edit"
   workflowId?: string
   initialJson: string
+  readOnly?: boolean
 }
 
-export function WorkflowEditorForm({ mode, workflowId, initialJson }: WorkflowEditorFormProps) {
+export function WorkflowEditorForm({
+  mode,
+  workflowId,
+  initialJson,
+  readOnly = false
+}: WorkflowEditorFormProps) {
   const router = useRouter()
   const [jsonText, setJsonText] = useState(initialJson)
   const [error, setError] = useState<string | null>(null)
@@ -39,18 +45,22 @@ export function WorkflowEditorForm({ mode, workflowId, initialJson }: WorkflowEd
 
   return (
     <div>
-      <WorkflowJsonEditor value={jsonText} onChange={setJsonText} />
-      <div className="row">
-        <button
-          type="button"
-          className="primary"
-          data-testid="save-workflow"
-          disabled={pending}
-          onClick={() => void onSubmit()}
-        >
-          {mode === "create" ? "Create" : "Save"}
-        </button>
-      </div>
+      <WorkflowJsonEditor value={jsonText} onChange={setJsonText} readOnly={readOnly} />
+      {readOnly ? (
+        <p className="muted">This workflow is deleted and cannot be saved.</p>
+      ) : (
+        <div className="row">
+          <button
+            type="button"
+            className="primary"
+            data-testid="save-workflow"
+            disabled={pending}
+            onClick={() => void onSubmit()}
+          >
+            {mode === "create" ? "Create" : "Save"}
+          </button>
+        </div>
+      )}
       {error ? (
         <p className="error" data-testid="form-error">
           {error}

@@ -143,7 +143,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Factory tests use in-memory SQLite (no MySQL required). `npm test` also runs the old Temporal graph PoC tests. Playwright covers UI create/update/delete plus one successful `pass-json` run against Temporal local + fake agent driver (`FACTORY_AGENT_DRIVER=fake`). Live Cursor Cloud agents are skipped unless `CURSOR_API_KEY` is set; do not put `CURSOR_*` in `cloud.envVars`.
+Factory tests use in-memory SQLite (no MySQL required). `npm test` also runs the old Temporal graph PoC tests. Playwright covers UI create/update/delete (Save is hidden on soft-deleted workflows) plus one successful `pass-json` run against Temporal local + fake agent driver (`FACTORY_AGENT_DRIVER=fake`). `scripts/e2e-stack.ts` recovers a stale `data/e2e-stack.lock` and leftover child process groups from a previous crash. Live Cursor Cloud agents are skipped unless `CURSOR_API_KEY` is set; do not put `CURSOR_*` in `cloud.envVars`.
 
 ## Reference PoC (not the factory API)
 

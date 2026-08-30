@@ -1,5 +1,6 @@
 import { isFactoryError, type FactoryErrorCode } from "../business/errors.ts"
 import type { FactoryService } from "../business/factory.ts"
+import { loadOnce } from "../business/once.ts"
 import { getFactoryService } from "../business/runtime.ts"
 
 export type RpcError = {
@@ -51,9 +52,11 @@ export type FactoryRpc = ReturnType<typeof createFactoryRpc>
 
 let rpcPromise: Promise<FactoryRpc> | undefined
 
-export const getFactoryRpc = async (): Promise<FactoryRpc> => {
-  if (!rpcPromise) {
-    rpcPromise = getFactoryService().then((service) => createFactoryRpc(service))
-  }
-  return rpcPromise
-}
+export const getFactoryRpc = async (): Promise<FactoryRpc> =>
+  loadOnce(
+    () => rpcPromise,
+    (pending) => {
+      rpcPromise = pending
+    },
+    () => getFactoryService().then((service) => createFactoryRpc(service))
+  )

@@ -33,7 +33,12 @@ export default async function WorkflowPage({
       {workflow.deletedAt ? null : <WorkflowActions id={workflow.id} />}
       <div className="panel">
         <h2>Definition</h2>
-        <WorkflowEditorForm mode="edit" workflowId={workflow.id} initialJson={pretty(workflow.definition)} />
+        <WorkflowEditorForm
+          mode="edit"
+          workflowId={workflow.id}
+          initialJson={pretty(workflow.definition)}
+          readOnly={workflow.deletedAt != null}
+        />
       </div>
       <div className="panel">
         <h2>Runs</h2>
