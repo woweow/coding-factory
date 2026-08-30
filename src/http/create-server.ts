@@ -22,6 +22,11 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(payload)
 }
 
+const sendNoContent = (res: ServerResponse): void => {
+  res.writeHead(204)
+  res.end()
+}
+
 const sendError = (res: ServerResponse, status: number, body: HttpErrorBody): void => {
   sendJson(res, status, body)
 }
@@ -45,10 +50,11 @@ const workflowResponse = (record: WorkflowRecord) => ({
   name: record.name,
   definition: record.definition,
   createdAt: record.createdAt,
-  updatedAt: record.updatedAt
+  updatedAt: record.updatedAt,
+  deletedAt: record.deletedAt
 })
 
-const runResponse = (record: WorkflowRunRecord, steps: Awaited<ReturnType<WorkflowStore["listRunSteps"]>>) => ({
+const runListItem = (record: WorkflowRunRecord) => ({
   id: record.id,
   workflowId: record.workflowId,
   cursorAgentId: record.cursorAgentId,
@@ -56,13 +62,25 @@ const runResponse = (record: WorkflowRunRecord, steps: Awaited<ReturnType<Workfl
   currentStepId: record.currentStepId,
   state: record.state,
   createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
+  updatedAt: record.updatedAt
+})
+
+const runResponse = (record: WorkflowRunRecord, steps: Awaited<ReturnType<WorkflowStore["listRunSteps"]>>) => ({
+  ...runListItem(record),
   steps
 })
 
 const pathOnly = (url: string): string => {
   const q = url.indexOf("?")
   return q === -1 ? url : url.slice(0, q)
+}
+
+const parseShowDeleted = (url: string): boolean | "invalid" => {
+  const raw = new URL(url, "http://127.0.0.1").searchParams.get("showDeleted")
+  if (raw === null || raw === "") return false
+  if (raw === "true") return true
+  if (raw === "false") return false
+  return "invalid"
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -88,6 +106,26 @@ const parseJsonBody = async (req: IncomingMessage, res: ServerResponse): Promise
   }
 }
 
+const readShowDeleted = (req: IncomingMessage, res: ServerResponse): boolean | undefined => {
+  const parsed = parseShowDeleted(req.url ?? "/")
+  if (parsed === "invalid") {
+    sendError(res, 400, { error: "validation_error", message: "showDeleted must be true or false" })
+    return undefined
+  }
+  return parsed
+}
+
+const loadVisibleWorkflow = async (
+  store: WorkflowStore,
+  id: string,
+  showDeleted: boolean
+): Promise<WorkflowRecord | null> => {
+  const record = await store.getWorkflow(id)
+  if (!record) return null
+  if (record.deletedAt && !showDeleted) return null
+  return record
+}
+
 const handleRegister = async (req: IncomingMessage, res: ServerResponse, store: WorkflowStore): Promise<void> => {
   const parsed = await parseJsonBody(req, res)
   if (parsed === undefined) return
@@ -108,13 +146,69 @@ const handleRegister = async (req: IncomingMessage, res: ServerResponse, store: 
   sendJson(res, 201, workflowResponse(record))
 }
 
-const handleGetWorkflow = async (res: ServerResponse, store: WorkflowStore, id: string): Promise<void> => {
-  const record = await store.getWorkflow(id)
+const handleListWorkflows = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: WorkflowStore
+): Promise<void> => {
+  const showDeleted = readShowDeleted(req, res)
+  if (showDeleted === undefined) return
+  const records = await store.listWorkflows({ showDeleted })
+  sendJson(res, 200, records.map(workflowResponse))
+}
+
+const handleGetWorkflow = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: WorkflowStore,
+  id: string
+): Promise<void> => {
+  const showDeleted = readShowDeleted(req, res)
+  if (showDeleted === undefined) return
+  const record = await loadVisibleWorkflow(store, id, showDeleted)
   if (!record) {
     sendError(res, 404, { error: "not_found", message: `workflow ${id} not found` })
     return
   }
   sendJson(res, 200, workflowResponse(record))
+}
+
+const handlePatchWorkflow = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: WorkflowStore,
+  id: string
+): Promise<void> => {
+  const parsed = await parseJsonBody(req, res)
+  if (parsed === undefined) return
+  if (!isRecord(parsed) || Object.keys(parsed).length === 0) {
+    sendError(res, 400, { error: "invalid_json", message: "request body is required" })
+    return
+  }
+  const result = validateWorkflowDefinition(parsed)
+  if (!result.ok) {
+    sendError(res, 400, {
+      error: "validation_error",
+      message: "workflow definition is invalid",
+      details: result.issues
+    })
+    return
+  }
+  const updated = await store.updateWorkflow(id, { definition: result.definition })
+  if (!updated) {
+    sendError(res, 404, { error: "not_found", message: `workflow ${id} not found` })
+    return
+  }
+  sendJson(res, 200, workflowResponse(updated))
+}
+
+const handleDeleteWorkflow = async (res: ServerResponse, store: WorkflowStore, id: string): Promise<void> => {
+  const found = await store.deleteWorkflow(id)
+  if (!found) {
+    sendError(res, 404, { error: "not_found", message: `workflow ${id} not found` })
+    return
+  }
+  sendNoContent(res)
 }
 
 const parseRunPrompt = (
@@ -158,7 +252,7 @@ const handleStartRun = async (
     sendError(res, 503, { error: "unavailable", message: "run starter is not configured" })
     return
   }
-  const workflow = await store.getWorkflow(workflowId)
+  const workflow = await loadVisibleWorkflow(store, workflowId, false)
   if (!workflow) {
     sendError(res, 404, { error: "not_found", message: `workflow ${workflowId} not found` })
     return
@@ -189,6 +283,23 @@ const handleStartRun = async (
     return
   }
   sendJson(res, 201, runResponse(started, []))
+}
+
+const handleListRuns = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: WorkflowStore,
+  workflowId: string
+): Promise<void> => {
+  const showDeleted = readShowDeleted(req, res)
+  if (showDeleted === undefined) return
+  const workflow = await loadVisibleWorkflow(store, workflowId, showDeleted)
+  if (!workflow) {
+    sendError(res, 404, { error: "not_found", message: `workflow ${workflowId} not found` })
+    return
+  }
+  const runs = await store.listRuns(workflowId)
+  sendJson(res, 200, runs.map(runListItem))
 }
 
 const handleGetRun = async (res: ServerResponse, store: WorkflowStore, id: string): Promise<void> => {
@@ -222,14 +333,25 @@ export const createFactoryServer = (store: WorkflowStore, startRun?: StartRunFn)
           await handleRegister(req, res, store)
           return
         }
-        const workflowRuns = pathname.match(/^\/workflows\/([^/]+)\/runs\/?$/)
-        if (method === "POST" && workflowRuns?.[1]) {
-          const parsed = await parseJsonBody(req, res)
-          if (parsed === undefined) return
-          const prompt = parseRunPrompt(parsed, res)
-          if (prompt === undefined) return
-          await handleStartRun(res, store, startRun, decodeURIComponent(workflowRuns[1]), prompt)
+        if (method === "GET" && (pathname === "/workflows" || pathname === "/workflows/")) {
+          await handleListWorkflows(req, res, store)
           return
+        }
+        const workflowRuns = pathname.match(/^\/workflows\/([^/]+)\/runs\/?$/)
+        if (workflowRuns?.[1]) {
+          const workflowId = decodeURIComponent(workflowRuns[1])
+          if (method === "POST") {
+            const parsed = await parseJsonBody(req, res)
+            if (parsed === undefined) return
+            const prompt = parseRunPrompt(parsed, res)
+            if (prompt === undefined) return
+            await handleStartRun(res, store, startRun, workflowId, prompt)
+            return
+          }
+          if (method === "GET") {
+            await handleListRuns(req, res, store, workflowId)
+            return
+          }
         }
         if (method === "POST" && (pathname === "/run-workflow" || pathname === "/run-workflow/")) {
           const parsed = await parseJsonBody(req, res)
@@ -248,10 +370,19 @@ export const createFactoryServer = (store: WorkflowStore, startRun?: StartRunFn)
           await handleGetRun(res, store, decodeURIComponent(runMatch[1]))
           return
         }
-        if (method === "GET") {
-          const idMatch = pathname.match(/^\/workflows\/([^/]+)\/?$/)
-          if (idMatch?.[1]) {
-            await handleGetWorkflow(res, store, decodeURIComponent(idMatch[1]))
+        const idMatch = pathname.match(/^\/workflows\/([^/]+)\/?$/)
+        if (idMatch?.[1]) {
+          const id = decodeURIComponent(idMatch[1])
+          if (method === "GET") {
+            await handleGetWorkflow(req, res, store, id)
+            return
+          }
+          if (method === "PATCH") {
+            await handlePatchWorkflow(req, res, store, id)
+            return
+          }
+          if (method === "DELETE") {
+            await handleDeleteWorkflow(res, store, id)
             return
           }
         }

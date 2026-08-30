@@ -15,8 +15,8 @@
     "temporal": "tsx temporal/client.ts",
     "temporal:worker": "tsx temporal/worker.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts temporal/workflows.test.ts",
-    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/http/register.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts"
+    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts temporal/workflows.test.ts",
+    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts"
   },
   "author": "woweow",
   "license": "ISC",
@@ -28,7 +28,8 @@
     "@temporalio/worker": "^1.22.0",
     "@temporalio/workflow": "^1.22.0",
     "@typeonce/effect-machine": "^0.18.0",
-    "effect": "4.0.0-rc.109"
+    "effect": "4.0.0-rc.109",
+    "mysql2": "^3.24.2"
   },
   "devDependencies": {
     "@temporalio/testing": "^1.22.0",

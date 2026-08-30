@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { DatabaseSync } from "node:sqlite"
+import mysql from "mysql2/promise"
 import type { WorkflowRecord, WorkflowRunRecord, WorkflowRunStepRecord } from "../domain/types.ts"
 import { newWorkflowId, newWorkflowRunId, newWorkflowRunStepId } from "../ids.ts"
 import type {
@@ -14,7 +14,7 @@ import type {
 } from "./port.ts"
 import { mapRun, mapRunStep, mapWorkflow, nowIso, type RunRow, type RunStepRow, type WorkflowRow } from "./workflow-map.ts"
 
-const SCHEMA_SQL = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema.sql"), "utf8")
+const SCHEMA_SQL = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema.mysql.sql"), "utf8")
 
 const WORKFLOW_COLUMNS = "id, name, definition, created_at, updated_at, deleted_at"
 const RUN_COLUMNS =
@@ -22,65 +22,76 @@ const RUN_COLUMNS =
 const RUN_STEP_COLUMNS =
   "id, run_id, step_id, cursor_agent_id, prompt, output, status, started_at, finished_at, created_at"
 
-const ensureParentDir = (sqlitePath: string): void => {
-  if (sqlitePath === ":memory:") return
-  mkdirSync(dirname(sqlitePath), { recursive: true })
+type MysqlPoolConfig = {
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
 }
 
-const ensureColumn = (db: DatabaseSync, table: string, column: string, type: string): void => {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-  if (!cols.some((col) => col.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+const splitSqlStatements = (sql: string): string[] =>
+  sql
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+
+const firstRow = <T>(rows: unknown): T | undefined => {
+  if (!Array.isArray(rows) || rows.length === 0) return undefined
+  return rows[0] as T
+}
+
+const asRows = <T>(rows: unknown): T[] => (Array.isArray(rows) ? (rows as T[]) : [])
+
+export const parseMysqlUrl = (databaseUrl: string): MysqlPoolConfig => {
+  let parsed: URL
+  try {
+    parsed = new URL(databaseUrl)
+  } catch {
+    throw new Error("DATABASE_URL is not a valid URL")
+  }
+  if (parsed.protocol !== "mysql:" && parsed.protocol !== "mysql2:") {
+    throw new Error("DATABASE_URL must be a mysql:// URL")
+  }
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, "")).trim()
+  if (!database) throw new Error("DATABASE_URL must include a database name")
+  return {
+    host: parsed.hostname || "127.0.0.1",
+    port: parsed.port ? Number(parsed.port) : 3306,
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database
   }
 }
 
-export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => {
-  ensureParentDir(sqlitePath)
-  const db = new DatabaseSync(sqlitePath)
-  db.exec("PRAGMA foreign_keys = ON")
-  if (sqlitePath !== ":memory:") db.exec("PRAGMA journal_mode = WAL")
-  db.exec("PRAGMA busy_timeout = 5000")
-  db.exec(SCHEMA_SQL)
-  ensureColumn(db, "workflows", "deleted_at", "TEXT")
+const migrateMysql = async (pool: mysql.Pool): Promise<void> => {
+  for (const statement of splitSqlStatements(SCHEMA_SQL)) {
+    await pool.query(statement)
+  }
+  const [cols] = await pool.execute(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflows' AND COLUMN_NAME = 'deleted_at'`
+  )
+  if (asRows(cols).length === 0) {
+    await pool.query("ALTER TABLE workflows ADD COLUMN deleted_at VARCHAR(40) NULL")
+  }
+}
 
-  const insertWorkflowStmt = db.prepare(
-    `INSERT INTO workflows (${WORKFLOW_COLUMNS})
-     VALUES (?, ?, ?, ?, ?, ?)`
-  )
-  const listWorkflowsStmt = db.prepare(
-    `SELECT ${WORKFLOW_COLUMNS} FROM workflows WHERE deleted_at IS NULL ORDER BY created_at ASC, id ASC`
-  )
-  const listWorkflowsIncludingDeletedStmt = db.prepare(
-    `SELECT ${WORKFLOW_COLUMNS} FROM workflows ORDER BY created_at ASC, id ASC`
-  )
-  const getWorkflowStmt = db.prepare(`SELECT ${WORKFLOW_COLUMNS} FROM workflows WHERE id = ?`)
-  const updateWorkflowStmt = db.prepare(
-    `UPDATE workflows SET name = ?, definition = ?, updated_at = ?
-     WHERE id = ? AND deleted_at IS NULL`
-  )
-  const deleteWorkflowStmt = db.prepare(
-    `UPDATE workflows SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`
-  )
-  const insertRunStmt = db.prepare(
-    `INSERT INTO workflow_runs (${RUN_COLUMNS})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-  const listRunsStmt = db.prepare(
-    `SELECT ${RUN_COLUMNS} FROM workflow_runs WHERE workflow_id = ? ORDER BY created_at ASC, id ASC`
-  )
-  const getRunStmt = db.prepare(`SELECT ${RUN_COLUMNS} FROM workflow_runs WHERE id = ?`)
-  const updateRunStmt = db.prepare(
-    `UPDATE workflow_runs
-     SET cursor_agent_id = ?, temporal_workflow_id = ?, current_step_id = ?, state = ?, updated_at = ?
-     WHERE id = ?`
-  )
-  const insertRunStepStmt = db.prepare(
-    `INSERT INTO workflow_run_steps (${RUN_STEP_COLUMNS})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-  const listRunStepsStmt = db.prepare(
-    `SELECT ${RUN_STEP_COLUMNS} FROM workflow_run_steps WHERE run_id = ? ORDER BY created_at ASC, id ASC`
-  )
+export const createMysqlWorkflowStore = async (databaseUrl: string): Promise<WorkflowStore> => {
+  const config = parseMysqlUrl(databaseUrl)
+  const pool = mysql.createPool({
+    ...config,
+    waitForConnections: true,
+    connectionLimit: 10
+  })
+  try {
+    await pool.query("SELECT 1")
+    await migrateMysql(pool)
+  } catch (error) {
+    await pool.end()
+    const message = error instanceof Error ? error.message : "failed to connect to MySQL"
+    throw new Error(`MySQL store failed: ${message}`)
+  }
 
   const store: WorkflowStore = {
     async insertWorkflow(input: InsertWorkflowInput): Promise<WorkflowRecord> {
@@ -93,24 +104,24 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         updatedAt: createdAt,
         deletedAt: null
       }
-      insertWorkflowStmt.run(
-        record.id,
-        record.name,
-        JSON.stringify(record.definition),
-        record.createdAt,
-        record.updatedAt,
-        record.deletedAt
+      await pool.execute(
+        `INSERT INTO workflows (${WORKFLOW_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)`,
+        [record.id, record.name, JSON.stringify(record.definition), record.createdAt, record.updatedAt, record.deletedAt]
       )
       return record
     },
 
     async listWorkflows(query?: ListWorkflowsQuery): Promise<WorkflowRecord[]> {
-      const rows = (query?.showDeleted ? listWorkflowsIncludingDeletedStmt.all() : listWorkflowsStmt.all()) as WorkflowRow[]
-      return rows.map(mapWorkflow)
+      const sql = query?.showDeleted
+        ? `SELECT ${WORKFLOW_COLUMNS} FROM workflows ORDER BY created_at ASC, id ASC`
+        : `SELECT ${WORKFLOW_COLUMNS} FROM workflows WHERE deleted_at IS NULL ORDER BY created_at ASC, id ASC`
+      const [rows] = await pool.execute(sql)
+      return asRows<WorkflowRow>(rows).map(mapWorkflow)
     },
 
     async getWorkflow(id: string): Promise<WorkflowRecord | null> {
-      const row = getWorkflowStmt.get(id) as WorkflowRow | undefined
+      const [rows] = await pool.execute(`SELECT ${WORKFLOW_COLUMNS} FROM workflows WHERE id = ?`, [id])
+      const row = firstRow<WorkflowRow>(rows)
       return row ? mapWorkflow(row) : null
     },
 
@@ -118,7 +129,10 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
       const existing = await store.getWorkflow(id)
       if (!existing || existing.deletedAt) return null
       const updatedAt = nowIso()
-      updateWorkflowStmt.run(input.definition.name, JSON.stringify(input.definition), updatedAt, id)
+      await pool.execute(
+        `UPDATE workflows SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+        [input.definition.name, JSON.stringify(input.definition), updatedAt, id]
+      )
       return {
         ...existing,
         name: input.definition.name,
@@ -132,7 +146,11 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
       if (!existing) return false
       if (existing.deletedAt) return true
       const deletedAt = nowIso()
-      deleteWorkflowStmt.run(deletedAt, deletedAt, id)
+      await pool.execute(`UPDATE workflows SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`, [
+        deletedAt,
+        deletedAt,
+        id
+      ])
       return true
     },
 
@@ -150,7 +168,7 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         createdAt,
         updatedAt: createdAt
       }
-      insertRunStmt.run(
+      await pool.execute(`INSERT INTO workflow_runs (${RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
         record.id,
         record.workflowId,
         record.cursorAgentId,
@@ -159,17 +177,21 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         record.state,
         record.createdAt,
         record.updatedAt
-      )
+      ])
       return record
     },
 
     async listRuns(workflowId: string): Promise<WorkflowRunRecord[]> {
-      const rows = listRunsStmt.all(workflowId) as RunRow[]
-      return rows.map(mapRun)
+      const [rows] = await pool.execute(
+        `SELECT ${RUN_COLUMNS} FROM workflow_runs WHERE workflow_id = ? ORDER BY created_at ASC, id ASC`,
+        [workflowId]
+      )
+      return asRows<RunRow>(rows).map(mapRun)
     },
 
     async getRun(id: string): Promise<WorkflowRunRecord | null> {
-      const row = getRunStmt.get(id) as RunRow | undefined
+      const [rows] = await pool.execute(`SELECT ${RUN_COLUMNS} FROM workflow_runs WHERE id = ?`, [id])
+      const row = firstRow<RunRow>(rows)
       return row ? mapRun(row) : null
     },
 
@@ -185,13 +207,11 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         state: patch.state !== undefined ? patch.state : existing.state,
         updatedAt: nowIso()
       }
-      updateRunStmt.run(
-        next.cursorAgentId,
-        next.temporalWorkflowId,
-        next.currentStepId,
-        next.state,
-        next.updatedAt,
-        next.id
+      await pool.execute(
+        `UPDATE workflow_runs
+         SET cursor_agent_id = ?, temporal_workflow_id = ?, current_step_id = ?, state = ?, updated_at = ?
+         WHERE id = ?`,
+        [next.cursorAgentId, next.temporalWorkflowId, next.currentStepId, next.state, next.updatedAt, next.id]
       )
       return next
     },
@@ -212,7 +232,7 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         finishedAt: input.finishedAt ?? null,
         createdAt
       }
-      insertRunStepStmt.run(
+      await pool.execute(`INSERT INTO workflow_run_steps (${RUN_STEP_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
         record.id,
         record.runId,
         record.stepId,
@@ -223,17 +243,20 @@ export const createSqliteWorkflowStore = (sqlitePath: string): WorkflowStore => 
         record.startedAt,
         record.finishedAt,
         record.createdAt
-      )
+      ])
       return record
     },
 
     async listRunSteps(runId: string): Promise<WorkflowRunStepRecord[]> {
-      const rows = listRunStepsStmt.all(runId) as RunStepRow[]
-      return rows.map(mapRunStep)
+      const [rows] = await pool.execute(
+        `SELECT ${RUN_STEP_COLUMNS} FROM workflow_run_steps WHERE run_id = ? ORDER BY created_at ASC, id ASC`,
+        [runId]
+      )
+      return asRows<RunStepRow>(rows).map(mapRunStep)
     },
 
     async close(): Promise<void> {
-      db.close()
+      await pool.end()
     }
   }
 

@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS workflows (
   name TEXT NOT NULL,
   definition TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS workflow_runs (

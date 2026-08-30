@@ -77,6 +77,7 @@ export type WorkflowRecord = {
   definition: WorkflowDefinition
   createdAt: string
   updatedAt: string
+  deletedAt: string | null
 }
 
 export const WORKFLOW_RUN_STATES = [

@@ -1,0 +1,48 @@
+{
+  "name": "pass-json",
+  "description": "Tiny live check: create then resume a Cursor Cloud agent that only replies {\"decision\":\"PASS\"}. No repo edits.",
+  "entry": "ask",
+  "agent": {
+    "name": "coding-factory pass-json",
+    "model": {
+      "id": "composer-2.5",
+      "params": [{ "id": "fast", "value": "false" }]
+    },
+    "mode": "agent",
+    "cloud": {
+      "env": { "type": "cloud" },
+      "repos": [
+        {
+          "url": "https://github.com/woweow/coding-factory",
+          "startingRef": "main"
+        }
+      ],
+      "workOnCurrentBranch": false,
+      "autoCreatePR": false,
+      "skipReviewerRequest": true,
+      "metadata": {
+        "factory": "coding-factory",
+        "workflow": "pass-json"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "ask",
+      "systemPrompt": "Do not edit files. Do not create a pull request. Do not use tools. Your only job is to reply with exactly this JSON object: {\"decision\":\"PASS\"}",
+      "mode": "agent",
+      "routes": [
+        {
+          "to": "confirm",
+          "prompt": "Again, do not edit files or use tools. Reply with exactly {\"decision\":\"PASS\"} and nothing else.",
+          "match": { "kind": "equals", "key": "decision", "value": "PASS" }
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "systemPrompt": "Do not edit files. Do not create a pull request. Do not use tools. Reply with exactly {\"decision\":\"PASS\"}",
+      "routes": []
+    }
+  ]
+}

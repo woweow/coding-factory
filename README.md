@@ -6,13 +6,30 @@ JSON HTTP only. No UI.
 
 ## APIs
 
+- `GET /workflows` — list. Query `showDeleted=true|false` (default `false`: hide soft-deleted)
 - `POST /workflows` (alias `POST /register-workflow`) — store a validated workflow, return `wf_...`
-- `GET /workflows/:id`
-- `POST /workflows/:id/runs` (alias `POST /run-workflow` with `{ "workflowId", "prompt?" }`) — persist a `run_...` and start Temporal. Returns the run id immediately.
+- `GET /workflows/:id` — same `showDeleted` query. Default **404** if soft-deleted unless `showDeleted=true`
+- `PATCH /workflows/:id` — replace definition/name (full workflow JSON, same as POST). **404** if deleted
+- `DELETE /workflows/:id` — soft delete (`deleted_at`). **204** if the id exists (including already deleted); **404** if it never existed
+- `GET /workflows/:id/runs` — runs for that workflow (same `showDeleted` visibility as GET workflow)
+- `POST /workflows/:id/runs` (alias `POST /run-workflow` with `{ "workflowId", "prompt?" }`) — persist a `run_...` and start Temporal. Returns the run id immediately. **404** if the workflow is deleted
 - `GET /runs/:id` — current step, `cursorAgentId`, `temporalWorkflowId`, `state`, and step history
 - `GET /health`
 
-Register rejects `apiKey`, `agent.local`, `agent.mcpServers`, and `agent.agents`. `agent.cloud.repos` is required. `CURSOR_API_KEY` is env-only and is never written to SQLite.
+`showDeleted` is the include-deleted flag. Only `true` and `false` are accepted.
+
+Register/PATCH reject `apiKey`, `agent.local`, `agent.mcpServers`, and `agent.agents`. `agent.cloud.repos` is required. `CURSOR_API_KEY` is env-only and is never written to SQLite or MySQL.
+
+## Storage
+
+The `WorkflowStore` port has two adapters:
+
+- **SQLite** (default, used by unit tests) — `SQLITE_PATH` (default `data/factory.db`)
+- **MySQL** — `DATABASE_URL=mysql://user:password@host:port/database`
+
+If `DATABASE_URL` is set, it must be a `mysql://` URL and the server/worker use MySQL. Otherwise SQLite. The Node process does not embed `mysqld`; run MySQL yourself (compose below).
+
+On HTTP server boot: migrate schema, then if the `workflows` table has **zero rows**, seed from `templates/` (`pass-json` and `ping-implement-review-pr`). Soft-deleted rows still count, so a wiped-looking list will not re-seed.
 
 ## Local run (SQLite + Temporal + worker)
 
@@ -23,7 +40,7 @@ npm i
 temporal server start-dev --db-filename temporal.db
 ```
 
-In another terminal, the factory worker (same SQLite file as the HTTP server):
+In another terminal, the factory worker (same store as the HTTP server):
 
 ```bash
 SQLITE_PATH=data/factory.db FACTORY_AGENT_DRIVER=fake npm run worker
@@ -43,16 +60,42 @@ SQLITE_PATH=data/factory.db npm run server
 
 Defaults: `http://127.0.0.1:8787`, sqlite `data/factory.db`.
 
+## MySQL (compose)
+
+```bash
+docker compose up -d
+```
+
+Wait until the `mysql` service is healthy, then point server and worker at it:
+
+```bash
+export DATABASE_URL=mysql://factory:factory@127.0.0.1:3306/factory
+npm run server
+```
+
+Worker (same URL):
+
+```bash
+export DATABASE_URL=mysql://factory:factory@127.0.0.1:3306/factory
+FACTORY_AGENT_DRIVER=fake npm run worker
+```
+
+Compose credentials: database/user/password `factory`, port `3306`. First boot migrates tables and seeds the two templates when the table is empty.
+
 ## Curl
 
 ```bash
 chmod +x dev/curl/*.sh
 ./dev/curl/register-workflow.sh
+curl -sS "${FACTORY_URL:-http://127.0.0.1:8787}/workflows"
+curl -sS "${FACTORY_URL:-http://127.0.0.1:8787}/workflows?showDeleted=true"
 ./dev/curl/run-workflow.sh wf_YOUR_ID
 ./dev/curl/get-run.sh run_YOUR_ID
 ```
 
-Optional prompt body: `dev/fixtures/run-workflow.json`. Register fixture inner model is `composer-2.5` with `fast=false`, repo `https://github.com/woweow/coding-factory`. For a live create/resume/match check without repo edits, register `dev/fixtures/pass-json.json` and POST `dev/fixtures/run-pass-json.json`. For a tiny `ping()` on `main` (implementer → reviewer `/bugbot` → open-pr), register `dev/fixtures/ping-implement-review-pr.json` and POST `dev/fixtures/run-ping-implement-review-pr.json`.
+`GET /workflows/:id?showDeleted=true` returns a soft-deleted workflow. `DELETE /workflows/:id` soft-deletes. `PATCH /workflows/:id` sends the same JSON body shape as POST.
+
+Optional prompt body: `dev/fixtures/run-workflow.json`. Register fixture inner model is `composer-2.5` with `fast=false`, repo `https://github.com/woweow/coding-factory`. For a live create/resume/match check without repo edits, register `dev/fixtures/pass-json.json` and POST `dev/fixtures/run-pass-json.json`. For a tiny `ping()` on `main` (implementer → reviewer `/bugbot` → open-pr), register `dev/fixtures/ping-implement-review-pr.json` and POST `dev/fixtures/run-ping-implement-review-pr.json`. Fresh MySQL/SQLite installs seed those two from `templates/`.
 
 Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 
@@ -73,7 +116,7 @@ TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json
 - `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
 - `steps`: `id`, optional `systemPrompt` / `mode`, `routes` (edge prompt + match)
 
-Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
+Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 
 ## Tests
 
@@ -82,7 +125,7 @@ npm run test:factory
 npm run typecheck
 ```
 
-`npm test` also runs the old Temporal graph PoC tests.
+Factory tests use in-memory SQLite (no MySQL required). `npm test` also runs the old Temporal graph PoC tests.
 
 Optional real cloud e2e is skipped unless `CURSOR_API_KEY` is set.
 
