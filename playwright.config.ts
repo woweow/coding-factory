@@ -14,7 +14,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npx tsx scripts/e2e-stack.ts",
+    command: "tsx scripts/e2e-stack.ts",
     url: "http://127.0.0.1:3000",
     timeout: 180_000,
     reuseExistingServer: !process.env.CI

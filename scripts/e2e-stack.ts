@@ -119,19 +119,3 @@ main().catch((error: unknown) => {
   shutdown()
   process.exit(1)
 })
-
-
-process.on("SIGINT", () => {
-  shutdown()
-  process.exit(0)
-})
-process.on("SIGTERM", () => {
-  shutdown()
-  process.exit(0)
-})
-
-main().catch((error: unknown) => {
-  console.error(error)
-  shutdown()
-  process.exit(1)
-})
