@@ -22,8 +22,9 @@ export type FakeCloudDriver = CloudAgentDriver & {
 export const createFakeCloudDriver = (replies?: string[]): FakeCloudDriver => {
   const calls: Array<"create" | "resume"> = []
   const sends: FakeSendCall[] = []
+  const agents = new Set<string>()
   let createdOptions: CursorCloudCreateOptions | undefined
-  let agentId: string | undefined
+  let lastId: string | undefined
   let index = 0
   const nextText = (): string => {
     const reply = replies?.[index] ?? `{"decision":"PASS"}`
@@ -47,20 +48,20 @@ export const createFakeCloudDriver = (replies?: string[]): FakeCloudDriver => {
       return createdOptions
     },
     get agentId() {
-      return agentId
+      return lastId
     },
     async create(options: CursorCloudCreateOptions): Promise<CloudAgentHandle> {
       requireCloudRepos(options)
-      if (agentId) throw new Error("fake cloud driver already created an agent")
       calls.push("create")
       createdOptions = options
-      agentId = `bc-fake-${randomUUID()}`
-      return handleFor(agentId)
+      const id = `bc-fake-${randomUUID()}`
+      agents.add(id)
+      lastId = id
+      return handleFor(id)
     },
     async resume(id: string, options: CursorCloudCreateOptions): Promise<CloudAgentHandle> {
       requireCloudRepos(options)
-      if (!agentId) throw new Error("fake cloud driver resume before create")
-      if (id !== agentId) throw new Error(`fake cloud driver resume mismatch: ${id}`)
+      if (!agents.has(id)) throw new Error(`fake cloud driver resume mismatch: ${id}`)
       calls.push("resume")
       return handleFor(id)
     }

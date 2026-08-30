@@ -9,5 +9,6 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts", "src/**/*.ts", "temporal/**/*.ts", "effect-reference/**/*.ts", "temporal-reference/**/*.ts"]
+  "include": ["*.ts", "src/**/*.ts", "temporal/**/*.ts", "effect-reference/**/*.ts", "temporal-reference/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["ui", "e2e", "playwright.config.ts", "node_modules", "effect-machine"]
 }

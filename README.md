@@ -2,7 +2,7 @@
 
 A factory for coding factories. Register a workflow (steps plus Cursor Cloud create options). Run it by id on Temporal local. Each step is a Cursor Cloud agent via `@cursor/sdk` — never a local agent. The cloud handle (`bc-...`) is stored on the **run** (`cursorAgentId`), not on the workflow.
 
-JSON HTTP only. No UI.
+Access is split: a **business layer** (`src/business`) implements workflow CRUD and run-by-id. A thin **REST** adapter (`src/http`) keeps the curl/JSON API. A thin **RPC** adapter (`src/rpc`) is what the Next.js UI calls (server actions / in-process RPC — not HTTP-to-REST).
 
 `ping.ts` exports `ping()` → `"pong"`.
 
@@ -33,7 +33,9 @@ The `WorkflowStore` port has two adapters:
 
 If `DATABASE_URL` is set, it must be a `mysql://` URL and the server/worker use MySQL. Otherwise SQLite. The Node process does not embed `mysqld`; run MySQL yourself (compose below).
 
-On HTTP server boot: migrate schema, then if the `workflows` table has **zero rows**, seed from `templates/` (`pass-json` and `ping-implement-review-pr`). Soft-deleted rows still count, so a wiped-looking list will not re-seed.
+On HTTP server or UI boot: migrate schema, then if the `workflows` table has **zero rows**, seed from `templates/` (`pass-json` and `ping-implement-review-pr`). Soft-deleted rows still count, so a wiped-looking list will not re-seed.
+
+Point the UI at the same store as the REST server (`SQLITE_PATH` or `DATABASE_URL`). The UI process talks to business over RPC in-process; it does not fetch REST as its primary path.
 
 ## Local run (SQLite + Temporal + worker)
 
@@ -63,6 +65,14 @@ SQLITE_PATH=data/factory.db npm run server
 ```
 
 Defaults: `http://127.0.0.1:8787`, sqlite `data/factory.db`.
+
+Next.js UI (same store, RPC — not REST fetch):
+
+```bash
+SQLITE_PATH=data/factory.db npm run ui
+```
+
+Open `http://127.0.0.1:3000`. Create/list/get/patch/delete workflows as JSON, honor Show deleted, and start a run by id. The JSON box is `WorkflowJsonEditor` so a builder library can replace it later.
 
 ## MySQL (compose)
 
@@ -105,7 +115,7 @@ Point scripts at another host with `FACTORY_URL=http://127.0.0.1:8787`.
 
 ## How a run executes
 
-1. HTTP inserts `workflow_runs` (`state=running`, `temporalWorkflowId=factory-<runId>`) and starts Temporal on task queue `factory-queue`.
+1. Business inserts `workflow_runs` (`state=running`, `temporalWorkflowId=factory-<runId>`) and starts Temporal on task queue `factory-queue`. REST and RPC both call that same function.
 2. Walker starts at `entry`, follows `routes` / `match` (`always`, or `equals` via `output[key] === value`). Omitted `systemPrompt` and route `prompt` default to `""`. Omitted route `match` defaults to `{ kind: "always" }`. Omitted step `mode` stays unset so agent-level `mode: "plan"` is not clobbered. Empty `routes` (or omitted routes) is terminal. Hop cap 32.
 3. First step with no `run.cursorAgentId`: `Agent.create` with the stored slim `agent` blob (`model`, `name`, `mode`, `cloud.repos` required, plus `startingRef`, `workOnCurrentBranch`, `autoCreatePR`, `openAsCursorGithubApp`, `skipReviewerRequest`, `env`, `envVars`, `metadata`). Then `send` + `wait`. Persist `agent.agentId` on the run.
 4. Later steps: `Agent.resume(run.cursorAgentId)` then `send` + `wait`.
@@ -120,6 +130,8 @@ TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json
 - `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
 - `steps`: `id`, optional `systemPrompt` / `mode` / `routes` (optional edge `prompt` + `match`; executor fills omitted prompt/match)
 
+POST/PATCH persist the **submitted JSON object** after validation (not a rebuilt definition). GET/list/UI return that stored JSON as-is, including explicit `"mode": "agent"` and omitted optionals.
+
 Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 
 ## Tests
@@ -127,11 +139,11 @@ Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run
 ```bash
 npm run test:factory
 npm run typecheck
+npx playwright install chromium
+npm run test:e2e
 ```
 
-Factory tests use in-memory SQLite (no MySQL required). `npm test` also runs the old Temporal graph PoC tests.
-
-Optional real cloud e2e is skipped unless `CURSOR_API_KEY` is set.
+Factory tests use in-memory SQLite (no MySQL required). `npm test` also runs the old Temporal graph PoC tests. Playwright covers UI create/update/delete (Save is hidden on soft-deleted workflows) plus one successful `pass-json` run against Temporal local + fake agent driver (`FACTORY_AGENT_DRIVER=fake`). `scripts/e2e-stack.ts` recovers a stale `data/e2e-stack.lock` and leftover child process groups from a previous crash. Live Cursor Cloud agents are skipped unless `CURSOR_API_KEY` is set; do not put `CURSOR_*` in `cloud.envVars`.
 
 ## Reference PoC (not the factory API)
 

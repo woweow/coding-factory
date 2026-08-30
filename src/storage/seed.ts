@@ -1,29 +1,27 @@
-import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { readdirSync } from "node:fs"
 import type { WorkflowDefinition } from "../domain/types.ts"
-import { validateWorkflowDefinition } from "../domain/validate.ts"
+import { parseWorkflowDefinition } from "../business/definition.ts"
+import { factoryPath, readFactoryFile } from "../paths.ts"
 import type { WorkflowStore } from "./port.ts"
-
-const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../templates")
 
 export const seedWorkflowsIfEmpty = async (store: WorkflowStore): Promise<number> => {
   const existing = await store.listWorkflows({ showDeleted: true })
   if (existing.length > 0) return 0
-  const files = readdirSync(TEMPLATES_DIR)
+  const templatesDir = factoryPath("templates")
+  const files = readdirSync(templatesDir)
     .filter((file) => file.endsWith(".json"))
     .sort()
-  if (files.length === 0) throw new Error(`no workflow templates in ${TEMPLATES_DIR}`)
+  if (files.length === 0) throw new Error(`no workflow templates in ${templatesDir}`)
   let seeded = 0
   for (const file of files) {
-    const raw = readFileSync(join(TEMPLATES_DIR, file), "utf8")
+    const raw = readFactoryFile("templates", file)
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
     } catch {
       throw new Error(`workflow template ${file} is not valid JSON`)
     }
-    const result = validateWorkflowDefinition(parsed)
+    const result = parseWorkflowDefinition(parsed)
     if (!result.ok) {
       const details = result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
       throw new Error(`workflow template ${file} is invalid: ${details}`)

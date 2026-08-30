@@ -4,3 +4,8 @@ data/
 temporal.db
 temporal.db-shm
 temporal.db-wal
+ui/.next/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
