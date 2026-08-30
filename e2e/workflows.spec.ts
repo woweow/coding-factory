@@ -1,21 +1,25 @@
 import { expect, test } from "@playwright/test"
 
-const workflowJson = (name: string): string =>
-  JSON.stringify(
-    {
-      name,
-      entry: "only",
-      agent: {
-        model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
-        cloud: {
-          repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }]
-        }
-      },
-      steps: [{ id: "only", routes: [] }]
-    },
-    null,
-    2
-  )
+const sparseWorkflow = (name: string) => ({
+  name,
+  entry: "only",
+  agent: {
+    model: { id: "composer-2.5", params: [{ id: "fast", value: "false" }] },
+    cloud: {
+      repos: [{ url: "https://github.com/woweow/coding-factory", startingRef: "main" }]
+    }
+  },
+  steps: [{ id: "only", mode: "agent" }]
+})
+
+const workflowJson = (name: string): string => JSON.stringify(sparseWorkflow(name), null, 2)
+
+const expectStoredSparseJson = async (page: import("@playwright/test").Page) => {
+  const value = await page.getByTestId("json-editor").inputValue()
+  expect(value).toMatch(/"mode": "agent"/)
+  expect(value).not.toMatch(/systemPrompt/)
+  expect(value).not.toMatch(/"routes"/)
+}
 
 test("UI CRUD plus a successful pass-json run over RPC", async ({ page }) => {
   await page.goto("/")
@@ -27,10 +31,12 @@ test("UI CRUD plus a successful pass-json run over RPC", async ({ page }) => {
   await page.getByTestId("json-editor").fill(workflowJson("e2e-created"))
   await page.getByTestId("save-workflow").click()
   await expect(page.getByTestId("workflow-name")).toHaveText("e2e-created")
+  await expectStoredSparseJson(page)
 
   await page.getByTestId("json-editor").fill(workflowJson("e2e-updated"))
   await page.getByTestId("save-workflow").click()
   await expect(page.getByTestId("workflow-name")).toHaveText("e2e-updated")
+  await expectStoredSparseJson(page)
 
   await page.getByTestId("delete-workflow").click()
   await expect(page.getByTestId("workflow-list")).toBeVisible()
