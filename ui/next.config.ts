@@ -6,6 +6,7 @@ const uiDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(uiDir, "..")
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   outputFileTracingRoot: repoRoot,
   serverExternalPackages: [
     "@temporalio/client",

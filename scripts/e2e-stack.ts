@@ -50,7 +50,12 @@ const spawnLogged = (command: string, args: string[], extraEnv: Record<string, s
 
 const shutdown = (): void => {
   for (const child of children) {
-    if (child.pid) child.kill("SIGTERM")
+    if (!child.pid) continue
+    try {
+      process.kill(child.pid, "SIGTERM")
+    } catch {
+      continue
+    }
   }
 }
 
@@ -61,7 +66,17 @@ const main = async (): Promise<void> => {
   if (existsSync(`${sqlitePath}-shm`)) rmSync(`${sqlitePath}-shm`)
 
   if (!(await portOpen(7233))) {
-    spawnLogged("temporal", ["server", "start-dev", "--headless", "--db-filename", resolve(root, "data/temporal-e2e.db")], {})
+    spawnLogged("temporal", [
+      "server",
+      "start-dev",
+      "--headless",
+      "--db-filename",
+      resolve(root, "data/temporal-e2e.db"),
+      "--port",
+      "7233",
+      "--ui-port",
+      "8233"
+    ], {})
     await waitPort(7233, 60_000)
   }
 
@@ -70,9 +85,11 @@ const main = async (): Promise<void> => {
     FACTORY_AGENT_DRIVER: "fake"
   }
   spawnLogged("npx", ["tsx", "src/temporal/worker.ts"], sharedEnv)
+  if (await portOpen(8787)) throw new Error("port 8787 already in use")
   spawnLogged("npx", ["tsx", "src/server.ts"], { ...sharedEnv, PORT: "8787" })
   await waitHttp("http://127.0.0.1:8787/health", 60_000)
-  spawnLogged("npx", ["next", "dev", "ui", "--port", "3000"], sharedEnv)
+  if (await portOpen(3000)) throw new Error("port 3000 already in use")
+  spawnLogged("npx", ["next", "dev", "ui", "--hostname", "127.0.0.1", "--port", "3000"], sharedEnv)
   await waitHttp("http://127.0.0.1:3000", 120_000)
   console.log("e2e stack ready: ui :3000 rest :8787")
   await new Promise(() => undefined)

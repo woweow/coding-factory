@@ -37,7 +37,8 @@ test("UI CRUD plus a successful pass-json run over RPC", async ({ page }) => {
   await expect(page.getByTestId("workflow-row-e2e-updated")).toHaveCount(0)
   await expect(page.getByTestId("workflow-row-pass-json")).toBeVisible()
 
-  await page.getByTestId("show-deleted").check()
+  await page.getByTestId("show-deleted").click()
+  await expect(page).toHaveURL(/showDeleted=true/)
   await expect(page.getByTestId("workflow-row-e2e-updated")).toBeVisible()
 
   await page.getByTestId("workflow-row-pass-json").getByRole("link").click()

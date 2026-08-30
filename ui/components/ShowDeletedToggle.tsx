@@ -1,21 +1,13 @@
-"use client"
-
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 export function ShowDeletedToggle({ checked }: { checked: boolean }) {
-  const router = useRouter()
   return (
-    <label>
-      <input
-        type="checkbox"
-        data-testid="show-deleted"
-        checked={checked}
-        onChange={(event) => {
-          const next = event.target.checked
-          router.push(next ? "/?showDeleted=true" : "/")
-        }}
-      />
-      Show deleted
-    </label>
+    <Link
+      href={checked ? "/" : "/?showDeleted=true"}
+      data-testid="show-deleted"
+      data-checked={checked ? "true" : "false"}
+    >
+      {checked ? "Hide deleted" : "Show deleted"}
+    </Link>
   )
 }
