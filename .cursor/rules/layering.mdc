@@ -1,0 +1,25 @@
+---
+description: REST and RPC are thin adapters; business lives in one place; UI calls RPC
+globs: ["src/http/**", "src/rpc/**", "src/business/**", "ui/**", "e2e/**"]
+alwaysApply: true
+---
+
+# Factory layering
+
+REST and RPC are **adapters**. They parse transport input, call the business layer, and map results to status codes or RPC envelopes. They must not contain workflow CRUD or run rules.
+
+## Where logic lives
+
+- **Business** (`src/business`): list/get/create/update/delete/soft-delete workflows, `showDeleted`, start run, get run. Returns domain data or throws `FactoryError`.
+- **REST** (`src/http`): HTTP parse, `createFactoryService`, JSON status/body. Keep the existing curl/JSON API working.
+- **RPC** (`src/rpc`): RPC parse, the **same** business functions, `{ ok, data | error }`. No REST fetch as a backdoor.
+
+## UI
+
+The Next.js UI talks to the business layer **over RPC only** (server actions wrapping `src/rpc`). Do not `fetch` `/workflows` or other REST routes as the primary path.
+
+Do not put business rules in Next.js route handlers, `app/api/**`, or HTTP `create-server.ts` beyond transport mapping.
+
+## Conversion
+
+JSON → domain conversion has one import site: `src/business/definition.ts`, which calls `validateWorkflowDefinition`. Persist submitted JSON. GET/list/UI return the stored document as-is. Do not add a JSON↔Node codec.

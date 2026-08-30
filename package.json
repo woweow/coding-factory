@@ -11,12 +11,17 @@
     "start": "tsx src/server.ts",
     "server": "tsx src/server.ts",
     "worker": "tsx src/temporal/worker.ts",
+    "ui": "next dev ui --port 3000",
+    "ui:build": "next build ui",
+    "ui:start": "next start ui --port 3000",
+    "e2e:stack": "tsx scripts/e2e-stack.ts",
+    "test:e2e": "playwright test",
     "dev": "tsx temporal/client.ts",
     "temporal": "tsx temporal/client.ts",
     "temporal:worker": "tsx temporal/worker.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/execute.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts temporal/workflows.test.ts",
-    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/execute.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts"
+    "test": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/business/factory.test.ts src/rpc/factory.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/execute.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts temporal/workflows.test.ts",
+    "test:factory": "tsx --test --test-concurrency=1 src/domain/validate.test.ts src/storage/sqlite.test.ts src/storage/seed.test.ts src/storage/mysql.test.ts src/business/factory.test.ts src/rpc/factory.test.ts src/http/register.test.ts src/http/workflows.test.ts src/http/run.test.ts src/factory/parse-output.test.ts src/factory/execute.test.ts src/factory/invoke-agent.test.ts src/temporal/factory-workflow.test.ts"
   },
   "author": "woweow",
   "license": "ISC",
@@ -29,11 +34,17 @@
     "@temporalio/workflow": "^1.22.0",
     "@typeonce/effect-machine": "^0.18.0",
     "effect": "4.0.0-rc.109",
-    "mysql2": "^3.24.2"
+    "mysql2": "^3.24.2",
+    "next": "^15.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@temporalio/testing": "^1.22.0",
     "@types/node": "^26.2.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
     "tsx": "^4.23.12",
     "typescript": "5.9"
   }

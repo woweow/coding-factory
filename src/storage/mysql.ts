@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
 import mysql from "mysql2/promise"
 import type { WorkflowRecord, WorkflowRunRecord, WorkflowRunStepRecord } from "../domain/types.ts"
 import { newWorkflowId, newWorkflowRunId, newWorkflowRunStepId } from "../ids.ts"
+import { readFactoryFile } from "../paths.ts"
 import type {
   InsertWorkflowInput,
   InsertWorkflowRunInput,
@@ -14,7 +12,7 @@ import type {
 } from "./port.ts"
 import { mapRun, mapRunStep, mapWorkflow, nowIso, type RunRow, type RunStepRow, type WorkflowRow } from "./workflow-map.ts"
 
-const SCHEMA_SQL = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema.mysql.sql"), "utf8")
+const SCHEMA_SQL = readFactoryFile("src/storage/schema.mysql.sql")
 
 const WORKFLOW_COLUMNS = "id, name, definition, created_at, updated_at, deleted_at"
 const RUN_COLUMNS =
