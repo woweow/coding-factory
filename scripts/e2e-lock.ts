@@ -41,5 +41,5 @@ export const lockIsHeld = (payload: E2eLockPayload | null, alive: (pid: number) 
 
 export const pidsToReap = (payload: E2eLockPayload | null, alive: (pid: number) => boolean): number[] => {
   if (lockIsHeld(payload, alive) || payload === null) return []
-  return payload.childPids.filter((pid) => alive(pid))
+  return [payload.stackPid, ...payload.childPids]
 }

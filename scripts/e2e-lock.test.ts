@@ -21,9 +21,9 @@ test("lockIsHeld is false when the stack pid is dead or the file is unreadable",
   assert.equal(lockIsHeld(null, alive), false)
 })
 
-test("pidsToReap returns leftover children only for a stale lock", () => {
+test("pidsToReap returns the stale stack pid and children so leftover groups can be signaled", () => {
   const alive = (pid: number) => pid === 34 || pid === 12
   assert.deepEqual(pidsToReap({ stackPid: 12, childPids: [34] }, alive), [])
-  assert.deepEqual(pidsToReap({ stackPid: 99, childPids: [34, 56] }, alive), [34])
+  assert.deepEqual(pidsToReap({ stackPid: 99, childPids: [34, 56] }, alive), [99, 34, 56])
   assert.deepEqual(pidsToReap(null, alive), [])
 })
