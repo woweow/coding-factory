@@ -11,6 +11,10 @@ export type InsertWorkflowInput = {
   definition: WorkflowDefinition
 }
 
+export type ListWorkflowsQuery = {
+  showDeleted?: boolean
+}
+
 export type InsertWorkflowRunInput = {
   workflowId: string
   cursorAgentId?: string | null
@@ -39,8 +43,12 @@ export type InsertWorkflowRunStepInput = {
 
 export type WorkflowStore = {
   insertWorkflow(input: InsertWorkflowInput): Promise<WorkflowRecord>
+  listWorkflows(query?: ListWorkflowsQuery): Promise<WorkflowRecord[]>
   getWorkflow(id: string): Promise<WorkflowRecord | null>
+  updateWorkflow(id: string, input: InsertWorkflowInput): Promise<WorkflowRecord | null>
+  deleteWorkflow(id: string): Promise<boolean>
   insertRun(input: InsertWorkflowRunInput): Promise<WorkflowRunRecord>
+  listRuns(workflowId: string): Promise<WorkflowRunRecord[]>
   getRun(id: string): Promise<WorkflowRunRecord | null>
   updateRun(id: string, patch: UpdateWorkflowRunInput): Promise<WorkflowRunRecord>
   insertRunStep(input: InsertWorkflowRunStepInput): Promise<WorkflowRunStepRecord>
