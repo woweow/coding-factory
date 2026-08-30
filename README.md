@@ -130,7 +130,7 @@ TypeScript: `src/domain/types.ts`. JSON Schema: `src/domain/workflow.schema.json
 - `agent`: persistable cloud create options (no apiKey, local, mcpServers, or subagents)
 - `steps`: `id`, optional `systemPrompt` / `mode` / `routes` (optional edge `prompt` + `match`; executor fills omitted prompt/match)
 
-POST/PATCH persist the validated document. GET/list/UI return that stored JSON as-is.
+POST/PATCH persist the **submitted JSON object** after validation (not a rebuilt definition). GET/list/UI return that stored JSON as-is, including explicit `"mode": "agent"` and omitted optionals.
 
 Stored workflow row: `deletedAt` (`null` until soft-deleted). Runtime on the run row: `cursorAgentId`, `temporalWorkflowId`, `currentStepId`, `state`. Step history in `workflow_run_steps`.
 

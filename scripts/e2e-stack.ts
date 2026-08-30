@@ -1,11 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { closeSync, existsSync, mkdirSync, openSync, rmSync, unlinkSync } from "node:fs"
 import { connect } from "node:net"
 import { resolve } from "node:path"
 
 const root = resolve(process.cwd())
 const sqlitePath = resolve(root, "data/e2e.db")
 const children: ChildProcess[] = []
+const lockPath = resolve(root, "data/e2e-stack.lock")
+let lockFd: number | undefined
 
 const portOpen = (port: number): Promise<boolean> =>
   new Promise((resolveOpen) => {
@@ -52,31 +54,39 @@ const shutdown = (): void => {
   for (const child of children) {
     if (!child.pid) continue
     try {
-      process.kill(child.pid, "SIGTERM")
+      process.kill(child.pid, "SIGKILL")
     } catch {
       continue
+    }
+  }
+  if (lockFd !== undefined) {
+    try {
+      closeSync(lockFd)
+    } catch {
+      /* ignore */
+    }
+    try {
+      unlinkSync(lockPath)
+    } catch {
+      /* ignore */
     }
   }
 }
 
 const main = async (): Promise<void> => {
   mkdirSync(resolve(root, "data"), { recursive: true })
+  lockFd = openSync(lockPath, "wx")
   if (existsSync(sqlitePath)) rmSync(sqlitePath)
   if (existsSync(`${sqlitePath}-wal`)) rmSync(`${sqlitePath}-wal`)
   if (existsSync(`${sqlitePath}-shm`)) rmSync(`${sqlitePath}-shm`)
 
+  const temporalDb = resolve(root, "data/temporal-e2e.db")
+  if (existsSync(temporalDb)) rmSync(temporalDb)
+  if (existsSync(`${temporalDb}-wal`)) rmSync(`${temporalDb}-wal`)
+  if (existsSync(`${temporalDb}-shm`)) rmSync(`${temporalDb}-shm`)
+
   if (!(await portOpen(7233))) {
-    spawnLogged("temporal", [
-      "server",
-      "start-dev",
-      "--headless",
-      "--db-filename",
-      resolve(root, "data/temporal-e2e.db"),
-      "--port",
-      "7233",
-      "--ui-port",
-      "8233"
-    ], {})
+    spawnLogged("temporal", ["server", "start-dev", "--headless", "--db-filename", temporalDb], {})
     await waitPort(7233, 60_000)
   }
 
