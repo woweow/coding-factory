@@ -4,6 +4,8 @@ A factory for coding factories. Register a workflow (steps plus Cursor Cloud cre
 
 JSON HTTP only. No UI.
 
+`ping.ts` exports `ping()` → `"pong"`.
+
 ## APIs
 
 - `POST /workflows` (alias `POST /register-workflow`) — store a validated workflow, return `wf_...`
